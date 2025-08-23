@@ -21,7 +21,7 @@ class AtlassianScraper:
         "jira": "https://community.atlassian.com/t5/Jira-questions/bd-p/jira-questions",
         "jsm": "https://community.atlassian.com/forums/Jira-Service-Management/ct-p/jira-service-desk", 
         "confluence": "https://community.atlassian.com/t5/Confluence-questions/bd-p/confluence-questions",
-        "rovo": "https://community.atlassian.com/t5/Rovo/bd-p/rovo",  # Keep trying original URL
+        "rovo": "https://community.atlassian.com/forums/Rovo/ct-p/rovo-atlassian-intelligence",
         "announcements": "https://community.atlassian.com/forums/Announcements/ct-p/announcements"
     }
     
