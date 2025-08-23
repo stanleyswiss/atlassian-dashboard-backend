@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     
-    # CORS - handle both string and list formats
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # CORS - will be parsed from environment variable
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
     
     # Scraper settings
     scraper_user_agent: str = "Mozilla/5.0 (compatible; AtlassianDashboard/1.0)"
@@ -37,25 +37,18 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
     
+    @property 
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS origins string into list"""
+        if isinstance(self.cors_origins, str):
+            return [url.strip() for url in self.cors_origins.split(",")]
+        return self.cors_origins
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Override debug based on environment
         if self.is_production:
             self.debug = False
-        
-        # Handle CORS origins from environment variable
-        cors_env = os.getenv("CORS_ORIGINS")
-        if cors_env:
-            if cors_env.startswith("[") and cors_env.endswith("]"):
-                # Handle list format: ["url1", "url2"]
-                import json
-                try:
-                    self.cors_origins = json.loads(cors_env)
-                except json.JSONDecodeError:
-                    pass
-            else:
-                # Handle comma-separated format: url1,url2
-                self.cors_origins = [url.strip() for url in cors_env.split(",")]
     
     class Config:
         env_file = ".env"
