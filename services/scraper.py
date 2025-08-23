@@ -19,10 +19,10 @@ class AtlassianScraper:
     
     BASE_URLS = {
         "jira": "https://community.atlassian.com/t5/Jira-questions/bd-p/jira-questions",
-        "jsm": "https://community.atlassian.com/t5/Jira-Service-Management/bd-p/jira-service-desk-discussions", 
+        "jsm": "https://community.atlassian.com/forums/Jira-Service-Management/ct-p/jira-service-desk", 
         "confluence": "https://community.atlassian.com/t5/Confluence-questions/bd-p/confluence-questions",
-        "rovo": "https://community.atlassian.com/t5/Rovo/bd-p/rovo",
-        "announcements": "https://community.atlassian.com/t5/Announcements/bd-p/announcements"
+        "rovo": "https://community.atlassian.com/t5/Rovo/bd-p/rovo",  # Keep trying original URL
+        "announcements": "https://community.atlassian.com/forums/Announcements/ct-p/announcements"
     }
     
     def __init__(self):
@@ -76,11 +76,14 @@ class AtlassianScraper:
         soup = BeautifulSoup(html, 'html.parser')
         posts = []
         
-        # Look for post links - Atlassian uses different selectors
+        # Look for post links - Atlassian uses different selectors for different page formats
         post_selectors = [
-            'a[href*="/t5/"][href*="/td-p/"]',  # Main post links
+            'a[href*="/t5/"][href*="/td-p/"]',  # Main post links (old format)
+            'a[href*="/forums/"][href*="/qaq-p/"]',  # New forums format
             '.message-subject a',  # Alternative selector
             '.thread-title a',  # Another common selector
+            'a[data-testid="thread-link"]',  # New forum format
+            '.lia-link-navigation',  # Generic Lithium platform links
         ]
         
         for selector in post_selectors:
