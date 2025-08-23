@@ -22,7 +22,7 @@ class AtlassianScraper:
         "jsm": "https://community.atlassian.com/forums/Jira-Service-Management/ct-p/jira-service-desk", 
         "confluence": "https://community.atlassian.com/t5/Confluence-questions/bd-p/confluence-questions",
         "rovo": "https://community.atlassian.com/forums/Rovo/ct-p/rovo-atlassian-intelligence",
-        "announcements": "https://community.atlassian.com/forums/Announcements/ct-p/announcements"
+        "announcements": "https://www.atlassian.com/blog/announcements"
     }
     
     def __init__(self):
@@ -85,6 +85,9 @@ class AtlassianScraper:
             '.thread-title a',  # Another common selector
             'a[data-testid="thread-link"]',  # New forum format
             '.lia-link-navigation',  # Generic Lithium platform links
+            'article h2 a',  # Blog post titles (for announcements)
+            '.post-title a',  # Blog post alternative
+            'h3 a[href*="/blog/"]',  # Blog links
         ]
         
         for selector in post_selectors:

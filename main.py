@@ -6,6 +6,7 @@ from database import create_tables
 from api import dashboard_router, posts_router, analytics_router
 from api.scraping import router as scraping_router
 from api.settings import router as settings_router
+from api.content_intelligence import router as intelligence_router
 
 # Create database tables on startup
 create_tables()
@@ -32,6 +33,7 @@ app.include_router(posts_router)
 app.include_router(analytics_router)
 app.include_router(scraping_router)
 app.include_router(settings_router)
+app.include_router(intelligence_router)
 
 @app.get("/health")
 async def health_check():
