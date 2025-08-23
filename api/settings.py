@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Dict, Any
 import logging
 import os
@@ -8,6 +9,7 @@ import openai
 from pydantic import BaseModel
 
 from database import get_db
+from database.connection import get_session
 from config import settings as app_settings
 
 logger = logging.getLogger(__name__)
@@ -196,11 +198,12 @@ async def get_system_status(db: Session = Depends(get_db)):
         
         # Test database
         try:
-            db_ops = DatabaseOperations()
-            total_posts = await db_ops.get_posts_count()
+            # Simple database health check
+            with get_session() as test_db:
+                test_db.execute(text("SELECT 1"))
             status["database"] = {
                 "status": "connected", 
-                "message": f"Database connected. {total_posts} posts available."
+                "message": "Database connection successful"
             }
         except Exception as e:
             status["database"] = {"status": "error", "message": f"Database error: {str(e)}"}
