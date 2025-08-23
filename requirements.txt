@@ -12,3 +12,4 @@ python-multipart==0.0.6
 aiofiles==23.2.1
 alembic==1.12.1
 aiohttp==3.12.15
+psycopg2-binary==2.9.9
