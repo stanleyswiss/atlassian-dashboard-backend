@@ -1,58 +1,46 @@
 import os
 from typing import Optional
-from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
-class Settings(BaseSettings):
-    app_name: str = "Atlassian Community Dashboard"
-    environment: str = "development"
-    debug: bool = True
+class Settings:
+    """Simple settings class without Pydantic validation issues"""
     
-    # Server settings
-    port: int = 8000
-    host: str = "0.0.0.0"
-    
-    # Database
-    database_url: str = "sqlite:///./data/atlassian_dashboard.db"
-    
-    # OpenAI
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
-    
-    # CORS - will be parsed from environment variable
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
-    
-    # Scraper settings
-    scraper_user_agent: str = "Mozilla/5.0 (compatible; AtlassianDashboard/1.0)"
-    scraper_timeout: int = 30
-    scraper_delay: float = 2.0
-    
-    # Background tasks
-    data_collection_interval: int = 3600  # 1 hour in seconds
-    sentiment_batch_size: int = 10
+    def __init__(self):
+        # App settings
+        self.app_name = "Atlassian Community Dashboard"
+        self.environment = os.getenv("ENVIRONMENT", "development")
+        self.debug = self.environment.lower() != "production"
+        
+        # Server settings
+        self.port = int(os.getenv("PORT", 8000))
+        self.host = os.getenv("HOST", "0.0.0.0")
+        
+        # Database
+        self.database_url = os.getenv("DATABASE_URL", "sqlite:///./data/atlassian_dashboard.db")
+        
+        # OpenAI
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        
+        # CORS - parse from environment variable
+        cors_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+        self.cors_origins = [url.strip() for url in cors_env.split(",") if url.strip()]
+        
+        # Scraper settings
+        self.scraper_user_agent = os.getenv("SCRAPER_USER_AGENT", "Mozilla/5.0 (compatible; AtlassianDashboard/1.0)")
+        self.scraper_timeout = int(os.getenv("SCRAPER_TIMEOUT", 30))
+        self.scraper_delay = float(os.getenv("SCRAPER_DELAY", 2.0))
+        
+        # Background tasks
+        self.data_collection_interval = int(os.getenv("DATA_COLLECTION_INTERVAL", 3600))
+        self.sentiment_batch_size = int(os.getenv("SENTIMENT_BATCH_SIZE", 10))
     
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
-    
-    @property 
-    def cors_origins_list(self) -> list[str]:
-        """Parse CORS origins string into list"""
-        if isinstance(self.cors_origins, str):
-            return [url.strip() for url in self.cors_origins.split(",")]
-        return self.cors_origins
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Override debug based on environment
-        if self.is_production:
-            self.debug = False
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
+# Create settings instance
 settings = Settings()
