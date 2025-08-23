@@ -75,6 +75,70 @@ async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: in
         logger.error(f"Failed to trigger real scraping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/populate-real-now")
+async def populate_real_data_now(background_tasks: BackgroundTasks):
+    """
+    Immediately populate database with real content from working forums
+    This bypasses the scheduler and directly scrapes Jira + Confluence
+    """
+    try:
+        async def populate_now():
+            logger.info("🚀 Starting immediate real data population...")
+            scraper = AtlassianScraper()
+            db_ops = DatabaseOperations()
+            
+            # Only use forums that work without authentication
+            working_forums = ['jira', 'confluence']
+            total_posts = 0
+            
+            async with scraper:
+                for forum in working_forums:
+                    logger.info(f"🔍 Scraping real content from {forum}...")
+                    
+                    try:
+                        # Scrape 25 posts per forum for good coverage
+                        posts = await scraper.scrape_category(forum, max_posts=25)
+                        logger.info(f"📋 Found {len(posts)} real posts from {forum}")
+                        
+                        # Store each post
+                        for post in posts:
+                            try:
+                                await db_ops.create_or_update_post({
+                                    'title': post.get('title', 'No title'),
+                                    'content': post.get('content', 'No content'), 
+                                    'author': post.get('author', 'Anonymous'),
+                                    'category': forum,
+                                    'url': post.get('url', ''),
+                                    'excerpt': post.get('excerpt', ''),
+                                    'date': post.get('date', datetime.now())
+                                })
+                            except Exception as e:
+                                logger.error(f"Error saving post: {e}")
+                        
+                        total_posts += len(posts)
+                        logger.info(f"✅ Saved {len(posts)} real posts from {forum}")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Error scraping {forum}: {e}")
+            
+            logger.info(f"🎉 Real data population complete! Total: {total_posts} posts")
+        
+        # Run real data population in background
+        background_tasks.add_task(populate_now)
+        
+        return {
+            "message": "Real content population initiated",
+            "status": "running",
+            "description": "Scraping 25 real posts each from Jira and Confluence forums",
+            "expected_posts": "~50 real posts",
+            "forums": ["jira", "confluence"],
+            "note": "This will take 2-3 minutes. Real content only - no demo data!"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to populate real data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/full-collection")
 async def trigger_full_data_collection(background_tasks: BackgroundTasks):
     """
