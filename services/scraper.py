@@ -78,6 +78,7 @@ class AtlassianScraper:
         
         # Look for post links - Atlassian uses different selectors for different page formats
         post_selectors = [
+            '.lia-list-row-title a',  # New forums format - EXACT selector from HTML analysis
             'a[href*="/t5/"][href*="/td-p/"]',  # Main post links (old format)
             'a[href*="/forums/"][href*="/qaq-p/"]',  # New forums format
             '.message-subject a',  # Alternative selector
