@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from typing import Dict, Any
 import logging
+from datetime import datetime
 
 from scheduler import trigger_scraping, trigger_full_collection, get_scheduler_status
 from services.scraper import AtlassianScraper
@@ -26,6 +27,52 @@ async def trigger_manual_scraping(background_tasks: BackgroundTasks):
         }
     except Exception as e:
         logger.error(f"Failed to trigger scraping: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/scrape-working-forums")
+async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: int = 30):
+    """
+    Scrape only the working forums (Jira and Confluence) with more posts
+    """
+    try:
+        async def scrape_real_content():
+            scraper = AtlassianScraper()
+            db_ops = DatabaseOperations()
+            
+            # Only scrape working forums
+            working_forums = ["jira", "confluence"]
+            
+            async with scraper:
+                for forum in working_forums:
+                    logger.info(f"🔍 Scraping real content from {forum}")
+                    posts = await scraper.scrape_category(forum, max_posts)
+                    
+                    # Store posts in database
+                    for post in posts:
+                        await db_ops.create_or_update_post({
+                            'title': post.get('title', 'No title'),
+                            'content': post.get('content', 'No content'),
+                            'author': post.get('author', 'Anonymous'),
+                            'category': forum,
+                            'url': post.get('url', ''),
+                            'excerpt': post.get('excerpt', ''),
+                            'date': post.get('date', datetime.now())
+                        })
+                    
+                    logger.info(f"✅ Stored {len(posts)} real posts from {forum}")
+        
+        # Run real content scraping in background
+        background_tasks.add_task(scrape_real_content)
+        
+        return {
+            "message": f"Real content scraping initiated (Jira + Confluence)",
+            "status": "running",
+            "forums": ["jira", "confluence"],
+            "max_posts_each": max_posts,
+            "note": f"Scraping up to {max_posts} real posts from each working forum. This will take 2-4 minutes."
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger real scraping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/full-collection")
