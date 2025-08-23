@@ -40,7 +40,7 @@ async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: in
             db_ops = DatabaseOperations()
             
             # Only scrape working forums
-            working_forums = ["jira", "confluence"]
+            working_forums = ["jira", "confluence", "jsm"]
             
             async with scraper:
                 for forum in working_forums:
@@ -87,8 +87,8 @@ async def populate_real_data_now(background_tasks: BackgroundTasks):
             scraper = AtlassianScraper()
             db_ops = DatabaseOperations()
             
-            # Only use forums that work without authentication
-            working_forums = ['jira', 'confluence']
+            # Only use forums that work without authentication  
+            working_forums = ['jira', 'confluence', 'jsm']
             total_posts = 0
             
             async with scraper:
@@ -129,9 +129,9 @@ async def populate_real_data_now(background_tasks: BackgroundTasks):
         return {
             "message": "Real content population initiated",
             "status": "running",
-            "description": "Scraping 25 real posts each from Jira and Confluence forums",
-            "expected_posts": "~50 real posts",
-            "forums": ["jira", "confluence"],
+            "description": "Scraping 25 real posts each from Jira, Confluence, and JSM forums", 
+            "expected_posts": "~75 real posts",
+            "forums": ["jira", "confluence", "jsm"],
             "note": "This will take 2-3 minutes. Real content only - no demo data!"
         }
         
