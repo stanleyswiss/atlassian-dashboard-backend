@@ -172,19 +172,33 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
         Keep the response concise and business-focused.
         """
         
-        openai.api_key = openai_key
-        
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.7
-        )
-        
-        ai_content = response.choices[0].message.content
+        # Try new OpenAI client first, fallback to legacy
+        try:
+            # New OpenAI client (v1.0+)
+            client = openai.OpenAI(api_key=openai_key)
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.7
+            )
+            ai_content = response.choices[0].message.content
+        except Exception as e:
+            # Fallback to legacy API
+            openai.api_key = openai_key
+            response = await openai.ChatCompletion.acreate(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.7
+            )
+            ai_content = response.choices[0].message.content
         
         return {
             "recent_releases_summary": "AI-powered analysis of recent releases",

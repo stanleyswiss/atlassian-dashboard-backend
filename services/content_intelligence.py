@@ -7,7 +7,9 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
 import openai
+import os
 from database.operations import DatabaseOperations
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,30 @@ class ContentIntelligenceService:
     
     def __init__(self, api_key: str = None):
         self.db_ops = DatabaseOperations()
-        self.api_key = api_key
-        if api_key:
-            openai.api_key = api_key
+        
+        # Get API key from multiple sources
+        self.api_key = (
+            api_key or 
+            settings.openai_api_key or 
+            os.environ.get("OPENAI_API_KEY") or 
+            os.getenv("OPENAI_API_KEY")
+        )
+        
+        logger.info(f"🔑 ContentIntelligenceService - API key available: {bool(self.api_key)}")
+        
+        if self.api_key:
+            try:
+                # Try new OpenAI client (v1.0+)
+                self.openai_client = openai.OpenAI(api_key=self.api_key)
+                logger.info("✅ OpenAI v1.0+ client initialized for content intelligence")
+            except Exception as e:
+                # Fallback to legacy method
+                openai.api_key = self.api_key
+                self.openai_client = None
+                logger.info("✅ OpenAI legacy client initialized for content intelligence")
+        else:
+            logger.warning("❌ No OpenAI API key found for content intelligence")
+            self.openai_client = None
     
     async def generate_forum_summary(self, forum: str, days: int = 7) -> Dict[str, Any]:
         """
@@ -191,22 +214,50 @@ class ContentIntelligenceService:
             """
             
             if not self.api_key:
+                logger.warning(f"🚫 No API key available for forum {forum} analysis - generating mock analysis")
                 return self._generate_mock_analysis(forum)
             
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an expert at analyzing technical community discussions and identifying patterns, issues, and trends."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=800,
-                temperature=0.3
-            )
+            logger.info(f"🤖 Making real OpenAI API call for forum {forum} analysis")
             
-            # Parse AI response (assuming it returns JSON)
-            import json
-            result = json.loads(response.choices[0].message.content)
-            return result
+            messages = [
+                {"role": "system", "content": "You are an expert at analyzing technical community discussions and identifying patterns, issues, and trends."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            try:
+                if self.openai_client:
+                    # New OpenAI client (v1.0+)
+                    logger.info("Using OpenAI v1.0+ client for content intelligence")
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        max_tokens=800,
+                        temperature=0.3
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens
+                else:
+                    # Legacy OpenAI API
+                    logger.info("Using OpenAI legacy API for content intelligence")
+                    response = await openai.ChatCompletion.acreate(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        max_tokens=800,
+                        temperature=0.3
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens if hasattr(response, 'usage') else 'unknown'
+                
+                logger.info(f"✅ OpenAI API call successful for forum {forum}, tokens: {tokens}")
+                
+                # Parse AI response (assuming it returns JSON)
+                import json
+                result = json.loads(content)
+                return result
+                
+            except Exception as api_error:
+                logger.error(f"OpenAI API call failed for forum {forum}: {api_error}")
+                raise api_error
             
         except Exception as e:
             logger.error(f"AI analysis failed: {e}")

@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Any
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import openai
+import os
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,30 @@ class VisionAnalyzer:
     """
     
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or settings.openai_api_key
+        # Get API key from multiple sources
+        self.api_key = (
+            api_key or 
+            settings.openai_api_key or 
+            os.environ.get("OPENAI_API_KEY") or 
+            os.getenv("OPENAI_API_KEY")
+        )
+        
+        logger.info(f"🔑 VisionAnalyzer - API key available: {bool(self.api_key)}")
+        
         if self.api_key:
-            openai.api_key = self.api_key
+            try:
+                # Try new OpenAI client (v1.0+)
+                self.openai_client = openai.OpenAI(api_key=self.api_key)
+                logger.info("✅ OpenAI v1.0+ client initialized for vision analysis")
+            except Exception as e:
+                # Fallback to legacy method
+                openai.api_key = self.api_key
+                self.openai_client = None
+                logger.info("✅ OpenAI legacy client initialized for vision analysis")
+        else:
+            logger.warning("❌ No OpenAI API key found for vision analysis")
+            self.openai_client = None
+            
         self.session: Optional[aiohttp.ClientSession] = None
     
     async def __aenter__(self):
@@ -136,38 +158,65 @@ class VisionAnalyzer:
         """
         try:
             if not self.api_key:
+                logger.warning(f"🚫 No API key available for vision analysis of {image_url}")
                 return self._generate_mock_vision_analysis(image_url)
+            
+            logger.info(f"🤖 Making real OpenAI Vision API call for image: {image_url}")
             
             # Download and analyze image
             prompt = self._create_vision_analysis_prompt(post_context)
             
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url,
-                                    "detail": "high"
-                                }
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url,
+                                "detail": "high"
                             }
-                        ]
-                    }
-                ],
-                max_tokens=800,
-                temperature=0.2
-            )
+                        }
+                    ]
+                }
+            ]
+            
+            try:
+                if self.openai_client:
+                    # New OpenAI client (v1.0+)
+                    logger.info("Using OpenAI v1.0+ client for vision analysis")
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-4-vision-preview",
+                        messages=messages,
+                        max_tokens=800,
+                        temperature=0.2
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens
+                else:
+                    # Legacy OpenAI API
+                    logger.info("Using OpenAI legacy API for vision analysis")
+                    response = await openai.ChatCompletion.acreate(
+                        model="gpt-4-vision-preview",
+                        messages=messages,
+                        max_tokens=800,
+                        temperature=0.2
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens if hasattr(response, 'usage') else 'unknown'
+                
+                logger.info(f"✅ OpenAI Vision API call successful, tokens: {tokens}")
+                
+            except Exception as api_error:
+                logger.error(f"OpenAI Vision API call failed: {api_error}")
+                raise api_error
             
             # Parse response
-            analysis_text = response.choices[0].message.content
-            analysis_data = self._parse_vision_response(analysis_text)
+            analysis_data = self._parse_vision_response(content)
             
             return {
                 "image_url": image_url,
