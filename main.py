@@ -8,6 +8,7 @@ from api.scraping import router as scraping_router
 from api.settings import router as settings_router
 from api.content_intelligence import router as intelligence_router
 from api.business_intelligence import router as bi_router
+from api.admin import router as admin_router
 
 # Create database tables on startup
 create_tables()
@@ -36,6 +37,7 @@ app.include_router(scraping_router)
 app.include_router(settings_router)
 app.include_router(intelligence_router)
 app.include_router(bi_router)
+app.include_router(admin_router)
 
 @app.get("/health")
 async def health_check():
