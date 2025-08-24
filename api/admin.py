@@ -220,6 +220,86 @@ async def migrate_database(force_recreate: bool = False):
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/create-settings-table")
+async def create_settings_table():
+    """Create settings table specifically - for troubleshooting settings persistence"""
+    try:
+        from database.connection import get_database_url
+        
+        database_url = get_database_url()
+        is_postgres = database_url.startswith('postgresql')
+        
+        with engine.connect() as conn:
+            # Check if settings table already exists
+            inspector = inspect(engine)
+            if inspector.has_table('settings'):
+                return {
+                    "success": True,
+                    "message": "Settings table already exists",
+                    "action": "none_needed",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            trans = conn.begin()
+            try:
+                # Create settings table
+                if is_postgres:
+                    settings_sql = """
+                    CREATE TABLE settings (
+                        id SERIAL PRIMARY KEY,
+                        key VARCHAR(100) NOT NULL UNIQUE,
+                        value TEXT NOT NULL,
+                        value_type VARCHAR(20) DEFAULT 'string',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX idx_settings_key ON settings(key);
+                    """
+                else:
+                    settings_sql = """
+                    CREATE TABLE settings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key VARCHAR(100) NOT NULL UNIQUE,
+                        value TEXT NOT NULL,
+                        value_type VARCHAR(20) DEFAULT 'string',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX idx_settings_key ON settings(key);
+                    """
+                
+                conn.execute(text(settings_sql))
+                trans.commit()
+                
+                logger.info("Successfully created settings table")
+                
+                return {
+                    "success": True,
+                    "message": "Settings table created successfully",
+                    "action": "created_settings_table",
+                    "database_type": "PostgreSQL" if is_postgres else "SQLite",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"Failed to create settings table: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to create settings table: {str(e)}",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+    except Exception as e:
+        logger.error(f"Error creating settings table: {e}")
+        return {
+            "success": False,
+            "message": f"Error creating settings table: {str(e)}",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/database-info")
 async def get_database_info():
     """Get information about the current database schema"""
