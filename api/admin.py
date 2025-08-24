@@ -353,6 +353,82 @@ async def debug_settings():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.get("/analyze-posts-status")
+async def analyze_posts_status():
+    """Check the status of AI analysis on current posts"""
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        from datetime import datetime, timedelta
+        
+        with get_session() as db:
+            # Get all posts
+            all_posts = db.query(PostDB).all()
+            total_posts = len(all_posts)
+            
+            # Check Vision AI analysis status
+            posts_with_vision = db.query(PostDB).filter(PostDB.vision_analysis.isnot(None)).count()
+            posts_with_enhanced_category = db.query(PostDB).filter(PostDB.enhanced_category.isnot(None)).count()
+            posts_with_screenshots = db.query(PostDB).filter(PostDB.has_screenshots == 1).count()
+            
+            # Get recent posts (last 24 hours)
+            recent_cutoff = datetime.now() - timedelta(hours=24)
+            recent_posts = db.query(PostDB).filter(PostDB.created_at >= recent_cutoff).all()
+            recent_count = len(recent_posts)
+            
+            # Sample some recent posts to check their analysis status
+            sample_posts = recent_posts[:5]  # First 5 recent posts
+            sample_analysis = []
+            
+            for post in sample_posts:
+                sample_analysis.append({
+                    "id": post.id,
+                    "title": post.title[:50] + "..." if len(post.title) > 50 else post.title,
+                    "category": post.category,
+                    "created_at": post.created_at.isoformat(),
+                    "has_vision_analysis": bool(post.vision_analysis),
+                    "has_enhanced_category": bool(post.enhanced_category),
+                    "enhanced_category": post.enhanced_category,
+                    "has_screenshots": bool(post.has_screenshots),
+                    "problem_severity": post.problem_severity,
+                    "business_impact": post.business_impact
+                })
+            
+            # Check if any posts have actual analysis data
+            posts_with_any_analysis = db.query(PostDB).filter(
+                (PostDB.vision_analysis.isnot(None)) | 
+                (PostDB.enhanced_category.isnot(None)) |
+                (PostDB.problem_severity.isnot(None))
+            ).count()
+            
+            return {
+                "success": True,
+                "analysis_status": {
+                    "total_posts": total_posts,
+                    "recent_posts_24h": recent_count,
+                    "posts_with_vision_analysis": posts_with_vision,
+                    "posts_with_enhanced_category": posts_with_enhanced_category,
+                    "posts_with_screenshots": posts_with_screenshots,
+                    "posts_with_any_analysis": posts_with_any_analysis,
+                    "analysis_coverage_percent": round((posts_with_any_analysis / total_posts * 100), 1) if total_posts > 0 else 0
+                },
+                "sample_recent_posts": sample_analysis,
+                "diagnosis": {
+                    "vision_ai_working": posts_with_vision > 0,
+                    "enhanced_analysis_working": posts_with_enhanced_category > 0,
+                    "likely_issue": "No AI analysis running on scraped posts" if posts_with_any_analysis == 0 else "AI analysis partially working"
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error analyzing posts status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/database-info")
 async def get_database_info():
     """Get information about the current database schema"""
