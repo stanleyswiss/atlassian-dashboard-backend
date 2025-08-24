@@ -588,6 +588,50 @@ async def analyze_next_batch(batch_size: int = 3):
     """Continue analyzing posts in small batches to avoid timeouts"""
     return await analyze_all_posts_with_ai(batch_size)
 
+@router.post("/test-openai-call")
+async def test_single_openai_call():
+    """Test a single OpenAI API call to verify it works"""
+    try:
+        from services.enhanced_analyzer import EnhancedAnalyzer
+        import logging
+        
+        logger.info("🧪 Testing single OpenAI API call")
+        
+        # Create analyzer instance
+        analyzer = EnhancedAnalyzer()
+        
+        # Test with a simple post
+        test_post = {
+            'id': 'test_123',
+            'title': 'Test OpenAI API Connection',
+            'content': 'This is a test post to verify OpenAI API is working correctly.',
+            'category': 'jira',
+            'author': 'test_user'
+        }
+        
+        # This should make a real API call if configured correctly
+        result = await analyzer._analyze_text_enhanced(test_post)
+        
+        return {
+            "success": True,
+            "message": "OpenAI API call test completed",
+            "test_result": {
+                "result_type": "real_api" if not result.get('mock_analysis') else "mock_analysis",
+                "api_response_keys": list(result.keys()),
+                "has_mock_flag": result.get('mock_analysis', False)
+            },
+            "full_result": result,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"OpenAI API test failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/openai-config-check")
 async def check_openai_configuration():
     """Check OpenAI API configuration without exposing the key"""
