@@ -16,11 +16,44 @@ async def test_admin_api():
         "timestamp": datetime.now().isoformat()
     }
 
+@router.get("/test-posts-query")
+async def test_posts_query():
+    """Test querying posts table to identify schema issues"""
+    
+    try:
+        with engine.connect() as conn:
+            # Try simple query first
+            result = conn.execute(text("SELECT COUNT(*) as count FROM posts"))
+            total_posts = result.fetchone()[0]
+            
+            # Try querying with enhanced columns
+            result = conn.execute(text("""
+                SELECT id, title, enhanced_category, has_screenshots, business_value 
+                FROM posts 
+                LIMIT 1
+            """))
+            sample_post = result.fetchone()
+            
+            return {
+                "success": True,
+                "total_posts": total_posts,
+                "sample_post": dict(sample_post._mapping) if sample_post else None,
+                "message": "Posts table query successful"
+            }
+            
+    except Exception as e:
+        logger.error(f"Posts query test failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Posts table query failed"
+        }
+
 @router.post("/migrate-database")
-async def migrate_database():
+async def migrate_database(force_recreate: bool = False):
     """Add missing enhanced analysis columns to database"""
     
-    logger.info("Starting database migration...")
+    logger.info(f"Starting database migration... (force_recreate={force_recreate})")
     
     try:
         # Get current schema
@@ -41,27 +74,27 @@ async def migrate_database():
         if is_postgres:
             new_columns_map = {
                 "enhanced_category": "VARCHAR(50)",
-                "has_screenshots": "BOOLEAN DEFAULT FALSE",
-                "vision_analysis": "TEXT",
-                "text_analysis": "TEXT", 
+                "has_screenshots": "INTEGER DEFAULT 0",  # Use INTEGER for boolean in Postgres too for compatibility
+                "vision_analysis": "JSONB",  # Use JSONB for better performance
+                "text_analysis": "JSONB", 
                 "problem_severity": "VARCHAR(20)",
-                "resolution_status": "VARCHAR(30)",
-                "business_impact": "VARCHAR(20)",
-                "business_value": "INTEGER DEFAULT 0",
-                "extracted_issues": "TEXT",
-                "mentioned_products": "TEXT"
+                "resolution_status": "VARCHAR(20)",  # Match model size
+                "business_impact": "VARCHAR(30)",
+                "business_value": "VARCHAR(50)",  # Match model - should be VARCHAR not INTEGER
+                "extracted_issues": "JSONB",
+                "mentioned_products": "JSONB"
             }
         else:
-            # SQLite
+            # SQLite - use TEXT for JSON fields
             new_columns_map = {
                 "enhanced_category": "VARCHAR(50)",
-                "has_screenshots": "BOOLEAN DEFAULT 0",
-                "vision_analysis": "TEXT",
+                "has_screenshots": "INTEGER DEFAULT 0",
+                "vision_analysis": "TEXT",  # SQLite stores JSON as TEXT
                 "text_analysis": "TEXT",
                 "problem_severity": "VARCHAR(20)", 
-                "resolution_status": "VARCHAR(30)",
-                "business_impact": "VARCHAR(20)",
-                "business_value": "INTEGER DEFAULT 0",
+                "resolution_status": "VARCHAR(20)",
+                "business_impact": "VARCHAR(30)",
+                "business_value": "VARCHAR(50)",
                 "extracted_issues": "TEXT",
                 "mentioned_products": "TEXT"
             }
@@ -80,6 +113,16 @@ async def migrate_database():
                         conn.execute(text(f"ALTER TABLE posts ADD COLUMN {column_name} {column_def}"))
                         added_columns.append(column_name)
                         logger.info(f"Added column: {column_name}")
+                    elif force_recreate:
+                        # Drop and recreate column with correct type
+                        try:
+                            conn.execute(text(f"ALTER TABLE posts DROP COLUMN {column_name}"))
+                            conn.execute(text(f"ALTER TABLE posts ADD COLUMN {column_name} {column_def}"))
+                            added_columns.append(f"{column_name} (recreated)")
+                            logger.info(f"Recreated column: {column_name}")
+                        except Exception as col_error:
+                            logger.warning(f"Could not recreate column {column_name}: {col_error}")
+                            skipped_columns.append(f"{column_name} (recreation failed)")
                     else:
                         skipped_columns.append(column_name)
                 
