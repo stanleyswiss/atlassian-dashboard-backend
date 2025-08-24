@@ -7,9 +7,20 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+@router.get("/test")
+async def test_admin_api():
+    """Test endpoint to verify admin API is working"""
+    return {
+        "success": True,
+        "message": "Admin API is working",
+        "timestamp": datetime.now().isoformat()
+    }
+
 @router.post("/migrate-database")
 async def migrate_database():
     """Add missing enhanced analysis columns to database"""
+    
+    logger.info("Starting database migration...")
     
     try:
         # Get current schema
@@ -111,6 +122,8 @@ async def migrate_database():
                 # Commit transaction
                 trans.commit()
                 
+                logger.info(f"Migration completed. Added: {added_columns}, Skipped: {skipped_columns}")
+                
                 return {
                     "success": True,
                     "message": "Database migration completed successfully",
@@ -122,12 +135,17 @@ async def migrate_database():
             except Exception as e:
                 # Rollback on error
                 trans.rollback()
-                logger.error(f"Migration failed: {e}")
-                raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+                logger.error(f"Migration transaction failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Migration transaction failed: {str(e)}")
                 
     except Exception as e:
         logger.error(f"Database migration error: {e}")
-        raise HTTPException(status_code=500, detail=f"Database migration failed: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Database migration failed: {str(e)}",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/database-info")
 async def get_database_info():
