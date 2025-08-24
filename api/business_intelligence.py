@@ -32,7 +32,7 @@ async def get_critical_issues(days: int = 7):
         for post in recent_posts:
             # Look for error/issue keywords in title
             title_lower = post.get('title', '').lower()
-            if any(keyword in title_lower for keyword in ['error', 'bug', 'broken', 'failed', 'issue', 'problem']):
+            if any(keyword in title_lower for keyword in ['error', 'bug', 'broken', 'failed', 'issue', 'problem', 'not working', 'help', 'trouble']):
                 critical_issues.append({
                     'issue_title': post.get('title'),
                     'severity': 'high' if any(word in title_lower for word in ['critical', 'urgent', 'broken']) else 'medium',
@@ -71,7 +71,7 @@ async def get_awesome_discoveries(days: int = 7):
         awesome_discoveries = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
-            if any(keyword in title_lower for keyword in ['success', 'solution', 'solved', 'working', 'tutorial', 'guide', 'how to']):
+            if any(keyword in title_lower for keyword in ['success', 'solution', 'solved', 'working', 'tutorial', 'guide', 'how to', 'share', 'example']):
                 awesome_discoveries.append({
                     'discovery_title': post.get('title'),
                     'category': post.get('category'),
@@ -105,7 +105,7 @@ async def get_trending_solutions(days: int = 7):
         trending_solutions = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
-            if any(keyword in title_lower for keyword in ['fix', 'solution', 'resolved', 'workaround', 'answer']):
+            if any(keyword in title_lower for keyword in ['fix', 'solution', 'resolved', 'workaround', 'answer', 'setup', 'configure']):
                 trending_solutions.append({
                     'solution_title': post.get('title'),
                     'category': post.get('category'),
@@ -139,7 +139,7 @@ async def get_unresolved_problems(days: int = 14):
         unresolved_problems = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
-            if any(keyword in title_lower for keyword in ['help', 'stuck', 'problem', 'not working', 'issue']):
+            if any(keyword in title_lower for keyword in ['help', 'stuck', 'problem', 'not working', 'issue', 'question', 'how']):
                 # Calculate days since post
                 days_ago = 1
                 if post.get('date'):
