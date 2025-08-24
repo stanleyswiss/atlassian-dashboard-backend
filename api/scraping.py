@@ -29,6 +29,43 @@ async def trigger_manual_scraping(background_tasks: BackgroundTasks):
         logger.error(f"Failed to trigger scraping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/trigger-all")
+async def trigger_all_forums_scraping():
+    """
+    Trigger immediate scraping of all forums with progress tracking
+    """
+    try:
+        # Initialize scraper
+        scraper = AtlassianScraper()
+        
+        # Trigger scraping synchronously for immediate feedback
+        result = await scraper.scrape_all_forums()
+        
+        if result.get('success'):
+            return {
+                "success": True,
+                "message": f"Successfully scraped {result.get('total_forums', 0)} forums",
+                "posts_scraped": result.get('total_posts', 0),
+                "forums_scraped": result.get('forums', []),
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "message": result.get('error', 'Scraping failed'),
+                "posts_scraped": 0,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to trigger all forums scraping: {e}")
+        return {
+            "success": False,
+            "message": f"Scraping failed: {str(e)}",
+            "posts_scraped": 0,
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/scrape-working-forums")
 async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: int = 30):
     """
