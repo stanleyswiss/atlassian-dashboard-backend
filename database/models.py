@@ -35,6 +35,18 @@ class PostDB(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
+class SettingsDB(Base):
+    __tablename__ = "settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=False)  # JSON stored as text
+    value_type = Column(String(20), nullable=False, default='string')  # string, integer, boolean, json
+    
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
 class AnalyticsDB(Base):
     __tablename__ = "analytics"
     

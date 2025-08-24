@@ -4,19 +4,21 @@ from sqlalchemy import text
 from typing import Dict, Any
 import logging
 import os
+import json
 from datetime import datetime
 import openai
 from pydantic import BaseModel
 
 from database import get_db
 from database.connection import get_session
+from database.models import SettingsDB
 from config import settings as app_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-# Global settings storage (in production, this should be in a database)
-_settings_storage = {
+# Default settings - will be stored in database
+DEFAULT_SETTINGS = {
     "scraping_enabled": False,
     "scraping_interval": 6,
     "vision_analysis_enabled": True,
@@ -39,12 +41,96 @@ class OpenAITestRequest(BaseModel):
     api_key: str
     test_text: str = "This is a test message for sentiment analysis."
 
+def get_setting_from_db(key: str, default_value=None):
+    """Get a setting from database"""
+    try:
+        with get_session() as db:
+            setting = db.query(SettingsDB).filter(SettingsDB.key == key).first()
+            if setting:
+                # Parse the value based on type
+                if setting.value_type == 'boolean':
+                    return setting.value.lower() == 'true'
+                elif setting.value_type == 'integer':
+                    return int(setting.value)
+                elif setting.value_type == 'json':
+                    return json.loads(setting.value)
+                else:
+                    return setting.value
+            return default_value
+    except Exception as e:
+        logger.error(f"Error getting setting {key}: {e}")
+        return default_value
+
+def set_setting_in_db(key: str, value, value_type: str = None):
+    """Set a setting in database"""
+    try:
+        with get_session() as db:
+            # Auto-detect type if not provided
+            if value_type is None:
+                if isinstance(value, bool):
+                    value_type = 'boolean'
+                elif isinstance(value, int):
+                    value_type = 'integer'
+                elif isinstance(value, (dict, list)):
+                    value_type = 'json'
+                else:
+                    value_type = 'string'
+            
+            # Convert value to string for storage
+            if value_type == 'json':
+                str_value = json.dumps(value)
+            else:
+                str_value = str(value)
+            
+            # Check if setting exists
+            setting = db.query(SettingsDB).filter(SettingsDB.key == key).first()
+            if setting:
+                # Update existing
+                setting.value = str_value
+                setting.value_type = value_type
+                setting.updated_at = datetime.now()
+            else:
+                # Create new
+                setting = SettingsDB(
+                    key=key,
+                    value=str_value,
+                    value_type=value_type
+                )
+                db.add(setting)
+            
+            db.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error setting {key}: {e}")
+        return False
+
+def get_all_settings():
+    """Get all settings from database with defaults"""
+    settings = DEFAULT_SETTINGS.copy()
+    
+    try:
+        with get_session() as db:
+            db_settings = db.query(SettingsDB).all()
+            for setting in db_settings:
+                # Parse the value based on type
+                if setting.value_type == 'boolean':
+                    settings[setting.key] = setting.value.lower() == 'true'
+                elif setting.value_type == 'integer':
+                    settings[setting.key] = int(setting.value)
+                elif setting.value_type == 'json':
+                    settings[setting.key] = json.loads(setting.value)
+                else:
+                    settings[setting.key] = setting.value
+    except Exception as e:
+        logger.error(f"Error getting all settings: {e}")
+    
+    return settings
+
 @router.get("/config")
 async def get_settings_config():
     """Get current application settings configuration"""
     try:
-        # Return settings without sensitive information
-        return _settings_storage.copy()
+        return get_all_settings()
     except Exception as e:
         logger.error(f"Error getting settings config: {e}")
         raise HTTPException(status_code=500, detail="Failed to get settings config")
@@ -53,7 +139,7 @@ async def get_settings_config():
 async def get_settings():
     """Get current application settings (legacy endpoint)"""
     try:
-        return _settings_storage.copy()
+        return get_all_settings()
     except Exception as e:
         logger.error(f"Error getting settings: {e}")
         raise HTTPException(status_code=500, detail="Failed to get settings")
@@ -75,15 +161,26 @@ async def save_settings_config(config: SettingsConfig):
         if config.max_pages_per_forum < 1 or config.max_pages_per_forum > 10:
             raise HTTPException(status_code=400, detail="Max pages per forum must be between 1 and 10")
         
-        # Update global settings
-        _settings_storage.update(config.model_dump())
+        # Save each setting to database
+        config_dict = config.model_dump()
+        saved_count = 0
         
-        logger.info("Settings configuration updated successfully")
+        for key, value in config_dict.items():
+            if set_setting_in_db(key, value):
+                saved_count += 1
+            else:
+                logger.warning(f"Failed to save setting: {key}")
         
-        return {
-            "message": "Settings saved successfully",
-            "timestamp": datetime.now().isoformat()
-        }
+        if saved_count == len(config_dict):
+            logger.info(f"Settings configuration updated successfully - {saved_count} settings saved")
+            return {
+                "message": "Settings saved successfully",
+                "settings_saved": saved_count,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            logger.error(f"Partial save: {saved_count}/{len(config_dict)} settings saved")
+            raise HTTPException(status_code=500, detail=f"Only {saved_count}/{len(config_dict)} settings were saved")
         
     except HTTPException:
         raise
@@ -153,25 +250,22 @@ async def test_openai_connection(request: OpenAITestRequest):
 @router.get("/current")
 async def get_current_settings():
     """Get current settings without masking (for internal use)"""
-    return _settings_storage
+    return get_all_settings()
 
 @router.post("/reset")
 async def reset_settings():
     """Reset settings to defaults"""
     try:
-        global _settings_storage
-        _settings_storage = {
-            "scraping_enabled": False,
-            "scraping_interval": 6,
-            "vision_analysis_enabled": True,
-            "max_posts_per_scrape": 50,
-            "auto_cleanup_enabled": True,
-            "data_retention_days": 30,
-            "max_pages_per_forum": 3
-        }
+        # Clear all settings from database and reset to defaults
+        reset_count = 0
+        
+        for key, value in DEFAULT_SETTINGS.items():
+            if set_setting_in_db(key, value):
+                reset_count += 1
         
         return {
             "message": "Settings reset to defaults",
+            "settings_reset": reset_count,
             "timestamp": datetime.now().isoformat()
         }
         
@@ -228,13 +322,15 @@ def get_openai_api_key() -> str:
 # Helper function to check if vision analysis is enabled
 def is_vision_analysis_enabled() -> bool:
     """Check if vision analysis is enabled"""
-    return _settings_storage.get("vision_analysis_enabled", True) and bool(os.environ.get("OPENAI_API_KEY", ""))
+    settings = get_all_settings()
+    return settings.get("vision_analysis_enabled", True) and bool(os.environ.get("OPENAI_API_KEY", ""))
 
 # Helper function to get scraping configuration
 def get_scraping_config() -> Dict[str, Any]:
     """Get current scraping configuration"""
+    settings = get_all_settings()
     return {
-        "enabled": _settings_storage.get("scraping_enabled", False),
-        "interval": _settings_storage.get("scraping_interval", 6),
-        "max_posts": _settings_storage.get("max_posts_per_scrape", 50)
+        "enabled": settings.get("scraping_enabled", False),
+        "interval": settings.get("scraping_interval", 6),
+        "max_posts": settings.get("max_posts_per_scrape", 50)
     }
