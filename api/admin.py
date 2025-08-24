@@ -86,6 +86,7 @@ async def migrate_database(force_recreate: bool = False):
         # Define new columns to add (adjust for database type)
         if is_postgres:
             new_columns_map = {
+                "html_content": "TEXT",  # Critical: HTML content with images for vision analysis
                 "enhanced_category": "VARCHAR(50)",
                 "has_screenshots": "INTEGER DEFAULT 0",  # Use INTEGER for boolean in Postgres too for compatibility
                 "vision_analysis": "JSONB",  # Use JSONB for better performance
@@ -100,6 +101,7 @@ async def migrate_database(force_recreate: bool = False):
         else:
             # SQLite - use TEXT for JSON fields
             new_columns_map = {
+                "html_content": "TEXT",  # Critical: HTML content with images for vision analysis
                 "enhanced_category": "VARCHAR(50)",
                 "has_screenshots": "INTEGER DEFAULT 0",
                 "vision_analysis": "TEXT",  # SQLite stores JSON as TEXT
