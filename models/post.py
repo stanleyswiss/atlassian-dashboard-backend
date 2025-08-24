@@ -51,6 +51,7 @@ class BusinessImpact(str, Enum):
 class PostBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     content: str = Field(..., min_length=1)
+    html_content: Optional[str] = Field(None)  # Original HTML with images preserved
     author: str = Field(..., min_length=1, max_length=100)
     category: PostCategory
     url: HttpUrl

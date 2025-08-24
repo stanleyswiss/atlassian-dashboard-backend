@@ -229,7 +229,7 @@ class ContentIntelligenceService:
                     # New OpenAI client (v1.0+) - synchronous call
                     logger.info("Using OpenAI v1.0+ client for content intelligence (synchronous)")
                     response = self.openai_client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-4o-mini",  # Uses latest cheaper version
                         messages=messages,
                         max_tokens=800,
                         temperature=0.3

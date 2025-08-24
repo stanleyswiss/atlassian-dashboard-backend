@@ -133,7 +133,7 @@ class EnhancedAnalyzer:
                     # New OpenAI client (v1.0+) - synchronous call
                     logger.info("Using OpenAI v1.0+ client (synchronous)")
                     response = self.openai_client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-4o-mini",  # Uses latest version automatically
                         messages=messages,
                         max_tokens=500,
                         temperature=0.2

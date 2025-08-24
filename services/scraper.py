@@ -214,14 +214,19 @@ class AtlassianScraper:
             ]
             
             content = ""
+            html_content = ""
             for selector in content_selectors:
                 content_elem = soup.select_one(selector)
                 if content_elem:
-                    # Get text and clean up HTML entities
-                    content = content_elem.get_text(strip=True, separator=' ')
+                    # Store both HTML and text versions
+                    html_content = str(content_elem)  # Preserve HTML with images
+                    content = content_elem.get_text(strip=True, separator=' ')  # Text only
+                    
                     # Limit content length for storage
                     if len(content) > 2000:
                         content = content[:2000] + "..."
+                    if len(html_content) > 10000:  # Allow more space for HTML
+                        html_content = html_content[:10000] + "..."
                     break
                     
             # Try meta description as fallback
@@ -263,6 +268,7 @@ class AtlassianScraper:
             return {
                 'title': title,
                 'content': content,
+                'html_content': html_content,
                 'author': author,
                 'date': post_date,
                 'excerpt': excerpt

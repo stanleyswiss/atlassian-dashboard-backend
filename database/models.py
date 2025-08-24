@@ -9,6 +9,7 @@ class PostDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(500), nullable=False, index=True)
     content = Column(Text, nullable=False)
+    html_content = Column(Text, nullable=True)  # Preserves original HTML with images
     author = Column(String(100), nullable=False, index=True)
     category = Column(String(50), nullable=False, index=True)  # jira, jsm, confluence, rovo, announcements
     url = Column(String(1000), nullable=False, unique=True)

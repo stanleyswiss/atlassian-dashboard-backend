@@ -190,7 +190,7 @@ class VisionAnalyzer:
                     # New OpenAI client (v1.0+) - synchronous call
                     logger.info("Using OpenAI v1.0+ client for vision analysis (synchronous)")
                     response = self.openai_client.chat.completions.create(
-                        model="gpt-4-vision-preview",
+                        model="gpt-4o-mini",  # Now supports vision and much cheaper
                         messages=messages,
                         max_tokens=800,
                         temperature=0.2
@@ -349,8 +349,8 @@ class VisionAnalyzer:
         Analyze a single post including both text and visual content
         """
         try:
-            # Extract images from post
-            post_html = post.get('content', '')
+            # Extract images from post - use html_content if available, fallback to content
+            post_html = post.get('html_content') or post.get('content', '')
             post_url = post.get('url', '')
             
             images = await self.extract_images_from_post(post_html, post_url)

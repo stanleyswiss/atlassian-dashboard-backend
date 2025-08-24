@@ -112,6 +112,7 @@ class DataProcessor:
         return PostCreate(
             title=post_data.get('title', 'No title'),
             content=post_data.get('content', 'No content'),
+            html_content=post_data.get('html_content'),  # Include HTML content
             author=post_data.get('author', 'Anonymous'),
             category=PostCategory(post_data.get('category', 'jira')),
             url=post_data.get('url', 'https://example.com'),

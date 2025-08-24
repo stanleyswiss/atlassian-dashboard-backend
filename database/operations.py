@@ -12,6 +12,7 @@ class PostOperations:
         db_post = PostDB(
             title=post.title,
             content=post.content,
+            html_content=post.html_content,
             author=post.author,
             category=post.category.value,
             url=str(post.url),
