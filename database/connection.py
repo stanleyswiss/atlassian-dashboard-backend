@@ -42,3 +42,7 @@ def create_tables():
 def drop_tables():
     """Drop all database tables (for testing/reset)"""
     Base.metadata.drop_all(bind=engine)
+
+def get_database_url():
+    """Get the database URL from settings"""
+    return settings.database_url

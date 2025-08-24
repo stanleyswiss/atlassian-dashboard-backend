@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import create_engine, text, inspect
-from database.connection import get_database_url
+from sqlalchemy import text, inspect
+from database.connection import engine, get_database_url
 import logging
 from datetime import datetime
 
@@ -12,9 +12,6 @@ async def migrate_database():
     """Add missing enhanced analysis columns to database"""
     
     try:
-        database_url = get_database_url()
-        engine = create_engine(database_url)
-        
         # Get current schema
         inspector = inspect(engine)
         
@@ -25,19 +22,38 @@ async def migrate_database():
         # Get existing columns
         existing_columns = {col['name'] for col in inspector.get_columns('posts')}
         
-        # Define new columns to add
-        new_columns_map = {
-            "enhanced_category": "VARCHAR(50)",
-            "has_screenshots": "BOOLEAN DEFAULT FALSE",
-            "vision_analysis": "TEXT",  # JSON stored as text
-            "text_analysis": "TEXT",    # JSON stored as text
-            "problem_severity": "VARCHAR(20)",
-            "resolution_status": "VARCHAR(30)",
-            "business_impact": "VARCHAR(20)",
-            "business_value": "INTEGER DEFAULT 0",
-            "extracted_issues": "TEXT", # JSON stored as text
-            "mentioned_products": "TEXT" # JSON stored as text
-        }
+        # Get database URL to determine database type
+        database_url = get_database_url()
+        is_postgres = database_url.startswith('postgresql')
+        
+        # Define new columns to add (adjust for database type)
+        if is_postgres:
+            new_columns_map = {
+                "enhanced_category": "VARCHAR(50)",
+                "has_screenshots": "BOOLEAN DEFAULT FALSE",
+                "vision_analysis": "TEXT",
+                "text_analysis": "TEXT", 
+                "problem_severity": "VARCHAR(20)",
+                "resolution_status": "VARCHAR(30)",
+                "business_impact": "VARCHAR(20)",
+                "business_value": "INTEGER DEFAULT 0",
+                "extracted_issues": "TEXT",
+                "mentioned_products": "TEXT"
+            }
+        else:
+            # SQLite
+            new_columns_map = {
+                "enhanced_category": "VARCHAR(50)",
+                "has_screenshots": "BOOLEAN DEFAULT 0",
+                "vision_analysis": "TEXT",
+                "text_analysis": "TEXT",
+                "problem_severity": "VARCHAR(20)", 
+                "resolution_status": "VARCHAR(30)",
+                "business_impact": "VARCHAR(20)",
+                "business_value": "INTEGER DEFAULT 0",
+                "extracted_issues": "TEXT",
+                "mentioned_products": "TEXT"
+            }
         
         added_columns = []
         skipped_columns = []
@@ -58,20 +74,36 @@ async def migrate_database():
                 
                 # Check if analytics table exists, if not create it
                 if not inspector.has_table('analytics'):
-                    analytics_sql = """
-                    CREATE TABLE analytics (
-                        id SERIAL PRIMARY KEY,
-                        date DATE NOT NULL,
-                        total_posts INTEGER DEFAULT 0,
-                        sentiment_breakdown TEXT,
-                        category_distribution TEXT,
-                        trending_topics TEXT,
-                        problem_resolution_stats TEXT,
-                        business_insights TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                    """
+                    if is_postgres:
+                        analytics_sql = """
+                        CREATE TABLE analytics (
+                            id SERIAL PRIMARY KEY,
+                            date DATE NOT NULL,
+                            total_posts INTEGER DEFAULT 0,
+                            sentiment_breakdown TEXT,
+                            category_distribution TEXT,
+                            trending_topics TEXT,
+                            problem_resolution_stats TEXT,
+                            business_insights TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                        """
+                    else:
+                        analytics_sql = """
+                        CREATE TABLE analytics (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            date DATE NOT NULL,
+                            total_posts INTEGER DEFAULT 0,
+                            sentiment_breakdown TEXT,
+                            category_distribution TEXT,
+                            trending_topics TEXT,
+                            problem_resolution_stats TEXT,
+                            business_insights TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                        """
                     conn.execute(text(analytics_sql))
                     added_columns.append("analytics_table")
                     logger.info("Created analytics table")
@@ -103,7 +135,6 @@ async def get_database_info():
     
     try:
         database_url = get_database_url()
-        engine = create_engine(database_url)
         inspector = inspect(engine)
         
         # Get table info
