@@ -341,24 +341,48 @@ async def get_sentiment_timeline(
 async def refresh_community_data(
     max_posts_per_category: int = 20,
     analyze_with_ai: bool = False,
+    full_scrape: bool = False,
     db: Session = Depends(get_db)
 ):
-    """Trigger manual data collection and refresh"""
+    """Trigger data refresh - lightweight by default, full scrape if requested"""
     try:
-        logger.info(f"🔄 Manual data refresh requested (AI: {analyze_with_ai})")
-        
-        # Run data collection
-        result = await collect_community_data(
-            db, 
-            max_posts_per_category=max_posts_per_category,
-            analyze_with_ai=analyze_with_ai
-        )
-        
-        return {
-            "status": "success",
-            "message": "Data refresh completed",
-            "result": result
-        }
+        if full_scrape:
+            logger.info(f"🔄 Full data collection requested (AI: {analyze_with_ai})")
+            
+            # Run full data collection (this can take several minutes)
+            result = await collect_community_data(
+                db, 
+                max_posts_per_category=max_posts_per_category,
+                analyze_with_ai=analyze_with_ai
+            )
+            
+            return {
+                "status": "success", 
+                "message": "Full data collection completed",
+                "result": result
+            }
+        else:
+            logger.info("🔄 Lightweight data refresh requested")
+            
+            # Just regenerate analytics from existing data (fast)
+            processor = DataProcessor(db)
+            today = date.today()
+            
+            # Regenerate today's analytics
+            analytics_result = await processor._generate_daily_analytics(today)
+            
+            # Clear any cached data that might be stale
+            # (In a real app, you'd have a proper cache management system)
+            
+            return {
+                "status": "success",
+                "message": "Dashboard data refreshed",
+                "result": {
+                    "analytics_updated": analytics_result is not None,
+                    "refresh_type": "lightweight",
+                    "timestamp": datetime.now()
+                }
+            }
         
     except Exception as e:
         logger.error(f"Error refreshing data: {e}")

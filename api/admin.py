@@ -10,9 +10,22 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 @router.get("/test")
 async def test_admin_api():
     """Test endpoint to verify admin API is working"""
+    import os
+    from config import settings
+    
+    api_key_env = os.environ.get("OPENAI_API_KEY", "")
+    api_key_settings = settings.openai_api_key
+    
     return {
         "success": True,
         "message": "Admin API is working",
+        "openai_check": {
+            "env_key_exists": bool(api_key_env),
+            "env_key_length": len(api_key_env) if api_key_env else 0,
+            "settings_key_exists": bool(api_key_settings), 
+            "settings_key_length": len(api_key_settings) if api_key_settings else 0,
+            "env_key_prefix": api_key_env[:7] + "..." if api_key_env and len(api_key_env) > 10 else "NOT_SET"
+        },
         "timestamp": datetime.now().isoformat()
     }
 
@@ -430,8 +443,8 @@ async def analyze_posts_status():
         }
 
 @router.post("/analyze-all-posts")
-async def analyze_all_posts_with_ai():
-    """Analyze all existing posts with Vision AI and enhanced analysis"""
+async def analyze_all_posts_with_ai(batch_size: int = 5):
+    """Analyze all existing posts with Vision AI and enhanced analysis (chunked processing)"""
     try:
         from database.connection import get_session
         from database.models import PostDB
@@ -451,15 +464,22 @@ async def analyze_all_posts_with_ai():
             posts_to_analyze = db.query(PostDB).filter(
                 (PostDB.vision_analysis.is_(None)) | 
                 (PostDB.enhanced_category.is_(None))
-            ).all()
+            ).limit(batch_size).all()  # Process in smaller batches
             
             if not posts_to_analyze:
                 return {
                     "success": True,
                     "message": "All posts are already analyzed",
                     "posts_analyzed": 0,
+                    "remaining_posts": 0,
                     "timestamp": datetime.now().isoformat()
                 }
+            
+            # Count total remaining posts
+            total_remaining = db.query(PostDB).filter(
+                (PostDB.vision_analysis.is_(None)) | 
+                (PostDB.enhanced_category.is_(None))
+            ).count()
             
             analyzer = EnhancedAnalyzer()
             analyzed_count = 0
@@ -485,16 +505,34 @@ async def analyze_all_posts_with_ai():
                     post.vision_analysis = json.dumps(analysis_result.get('vision_analysis', {}))
                     post.text_analysis = json.dumps(analysis_result.get('text_analysis', {}))
                     
-                    # Extract specific fields from analysis
+                    # Extract specific fields from analysis with safer enum mapping
                     vision_data = analysis_result.get('vision_analysis', {})
                     text_data = analysis_result.get('text_analysis', {})
                     business_insights = analysis_result.get('business_insights', {})
                     
                     post.has_screenshots = vision_data.get('has_images', 0)
-                    post.problem_severity = text_data.get('urgency_level', 'unknown')
-                    post.resolution_status = text_data.get('resolution_status', 'unknown')
-                    post.business_impact = business_insights.get('user_experience_impact', 'minimal')
-                    post.business_value = business_insights.get('business_value', 'low')
+                    
+                    # Map AI analysis to valid enum values
+                    urgency = text_data.get('urgency_level', 'none')
+                    if urgency in ['critical', 'high', 'medium', 'low', 'none']:
+                        post.problem_severity = urgency
+                    else:
+                        post.problem_severity = 'none'
+                    
+                    resolution = text_data.get('resolution_status', 'unanswered')
+                    if resolution in ['resolved', 'in_progress', 'needs_help', 'unanswered']:
+                        post.resolution_status = resolution
+                    else:
+                        post.resolution_status = 'unanswered'
+                    
+                    impact = business_insights.get('user_experience_impact', 'none')
+                    if impact in ['productivity_loss', 'data_access_blocked', 'workflow_broken', 'feature_unavailable', 'minor_inconvenience', 'none']:
+                        post.business_impact = impact
+                    else:
+                        post.business_impact = 'none'
+                    
+                    business_val = business_insights.get('business_value', 'low')
+                    post.business_value = business_val
                     
                     # Extract issues and products
                     post.extracted_issues = json.dumps(vision_data.get('extracted_issues', []))
@@ -515,25 +553,71 @@ async def analyze_all_posts_with_ai():
                     
                     analyzed_count += 1
                     
+                    # Commit after each post to avoid losing work on timeout
+                    db.commit()
+                    
                 except Exception as e:
                     logger.error(f"Error analyzing post {post.id}: {e}")
                     errors.append(f"Post {post.id}: {str(e)}")
                     continue
             
-            # Commit all changes
-            db.commit()
+            remaining_after_batch = total_remaining - analyzed_count
             
             return {
                 "success": True,
                 "message": f"Successfully analyzed {analyzed_count} posts",
-                "total_posts": len(posts_to_analyze),
+                "batch_size": len(posts_to_analyze),
                 "posts_analyzed": analyzed_count,
+                "remaining_posts": max(0, remaining_after_batch),
+                "progress_percent": round(((total_remaining - remaining_after_batch) / total_remaining * 100), 1) if total_remaining > 0 else 100,
                 "errors": errors if errors else None,
+                "continue_analysis": remaining_after_batch > 0,
                 "timestamp": datetime.now().isoformat()
             }
             
     except Exception as e:
         logger.error(f"Error in batch analysis: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/analyze-next-batch")  
+async def analyze_next_batch(batch_size: int = 3):
+    """Continue analyzing posts in small batches to avoid timeouts"""
+    return await analyze_all_posts_with_ai(batch_size)
+
+@router.get("/openai-config-check")
+async def check_openai_configuration():
+    """Check OpenAI API configuration without exposing the key"""
+    try:
+        from config import settings
+        from api.settings import is_vision_analysis_enabled, get_openai_api_key
+        import os
+        
+        api_key = get_openai_api_key()
+        config_api_key = settings.openai_api_key
+        env_api_key = os.environ.get("OPENAI_API_KEY", "")
+        
+        return {
+            "success": True,
+            "openai_config": {
+                "api_key_from_settings": bool(config_api_key),
+                "api_key_length_settings": len(config_api_key) if config_api_key else 0,
+                "api_key_from_env": bool(env_api_key),
+                "api_key_length_env": len(env_api_key) if env_api_key else 0,
+                "api_key_from_function": bool(api_key),
+                "api_key_length_function": len(api_key) if api_key else 0,
+                "vision_analysis_enabled": is_vision_analysis_enabled(),
+                "api_key_prefix": api_key[:7] + "..." if api_key and len(api_key) > 10 else "NOT_SET",
+                "environment_keys": list(os.environ.keys())[:10] # First 10 env vars
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking OpenAI config: {e}")
         return {
             "success": False,
             "error": str(e),

@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import openai
+import os
 from database.operations import DatabaseOperations
 from services.vision_analyzer import VisionAnalyzer
 from config import settings
@@ -20,9 +21,36 @@ class EnhancedAnalyzer:
     """
     
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or settings.openai_api_key
+        # Try multiple sources for API key
+        self.api_key = (
+            api_key or 
+            settings.openai_api_key or 
+            os.environ.get("OPENAI_API_KEY") or 
+            os.getenv("OPENAI_API_KEY")
+        )
+        
+        logger.info(f"🔑 EnhancedAnalyzer init - API key sources:")
+        logger.info(f"  - From parameter: {bool(api_key)}")
+        logger.info(f"  - From settings: {bool(settings.openai_api_key)}")
+        logger.info(f"  - From os.environ: {bool(os.environ.get('OPENAI_API_KEY'))}")
+        logger.info(f"  - From os.getenv: {bool(os.getenv('OPENAI_API_KEY'))}")
+        logger.info(f"  - Final API key available: {bool(self.api_key)}, Length: {len(self.api_key) if self.api_key else 0}")
+        
         if self.api_key:
-            openai.api_key = self.api_key
+            # Try both old and new OpenAI API initialization methods
+            try:
+                # New OpenAI client (v1.0+)
+                self.openai_client = openai.OpenAI(api_key=self.api_key)
+                logger.info(f"✅ OpenAI v1.0+ client initialized, prefix: {self.api_key[:7]}...")
+            except Exception as e:
+                # Fallback to old method
+                openai.api_key = self.api_key
+                self.openai_client = None
+                logger.info(f"✅ OpenAI legacy client initialized, prefix: {self.api_key[:7]}...")
+        else:
+            logger.warning("❌ No OpenAI API key found - will use mock analysis")
+            self.openai_client = None
+            
         self.db_ops = DatabaseOperations()
         self.vision_analyzer = VisionAnalyzer(api_key)
     
@@ -90,22 +118,51 @@ class EnhancedAnalyzer:
             """
             
             if not self.api_key:
+                logger.warning(f"🚫 No API key available for post {post.get('id', 'unknown')} - generating mock analysis")
                 return self._generate_mock_text_analysis(post)
             
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an expert at analyzing technical forum posts and identifying user needs, problems, and solutions."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=500,
-                temperature=0.2
-            )
+            logger.info(f"🤖 Making real OpenAI API call for post {post.get('id', 'unknown')}")
             
-            # Parse response
-            import json
-            result = json.loads(response.choices[0].message.content)
-            return result
+            messages = [
+                {"role": "system", "content": "You are an expert at analyzing technical forum posts and identifying user needs, problems, and solutions."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            try:
+                if self.openai_client:
+                    # New OpenAI client (v1.0+)
+                    logger.info("Using OpenAI v1.0+ client")
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        max_tokens=500,
+                        temperature=0.2
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens
+                else:
+                    # Legacy OpenAI API
+                    logger.info("Using OpenAI legacy API")
+                    response = await openai.ChatCompletion.acreate(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        max_tokens=500,
+                        temperature=0.2
+                    )
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens if hasattr(response, 'usage') else 'unknown'
+                
+                logger.info(f"✅ OpenAI API call successful for post {post.get('id', 'unknown')}, response tokens: {tokens}")
+                
+                # Parse response
+                import json
+                result = json.loads(content)
+                logger.info(f"📊 Parsed AI analysis result: {list(result.keys()) if isinstance(result, dict) else 'invalid'}")
+                return result
+                
+            except Exception as api_error:
+                logger.error(f"OpenAI API call failed: {api_error}")
+                raise api_error
             
         except Exception as e:
             logger.error(f"Text analysis failed: {e}")
@@ -679,6 +736,7 @@ class EnhancedAnalyzer:
     
     def _generate_mock_text_analysis(self, post: Dict) -> Dict[str, Any]:
         """Generate mock text analysis when OpenAI is not available"""
+        logger.warning(f"🎭 Generating MOCK analysis for post {post.get('id', 'unknown')} - this is fake sentiment data!")
         title = post.get('title', '').lower()
         content = post.get('content', '').lower()
         
