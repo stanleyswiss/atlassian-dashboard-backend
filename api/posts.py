@@ -2,12 +2,73 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
+import json
 
 from database import get_db, PostOperations
 from models import PostResponse, PostCreate, PostUpdate, SentimentLabel, PostCategory
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/posts", tags=["posts"])
+
+def convert_db_post_to_response(post) -> PostResponse:
+    """Convert database post model to response model, parsing JSON fields"""
+    
+    # Parse JSON fields if they exist
+    vision_analysis = None
+    if post.vision_analysis:
+        try:
+            vision_analysis = json.loads(post.vision_analysis) if isinstance(post.vision_analysis, str) else post.vision_analysis
+        except (json.JSONDecodeError, TypeError):
+            vision_analysis = {}
+    
+    text_analysis = None
+    if post.text_analysis:
+        try:
+            text_analysis = json.loads(post.text_analysis) if isinstance(post.text_analysis, str) else post.text_analysis
+        except (json.JSONDecodeError, TypeError):
+            text_analysis = {}
+    
+    extracted_issues = []
+    if post.extracted_issues:
+        try:
+            extracted_issues = json.loads(post.extracted_issues) if isinstance(post.extracted_issues, str) else post.extracted_issues
+        except (json.JSONDecodeError, TypeError):
+            extracted_issues = []
+    
+    mentioned_products = []
+    if post.mentioned_products:
+        try:
+            mentioned_products = json.loads(post.mentioned_products) if isinstance(post.mentioned_products, str) else post.mentioned_products
+        except (json.JSONDecodeError, TypeError):
+            mentioned_products = []
+    
+    # Create response model with parsed JSON
+    post_dict = {
+        "id": post.id,
+        "title": post.title,
+        "content": post.content,
+        "author": post.author,
+        "category": post.category,
+        "url": post.url,
+        "excerpt": post.excerpt,
+        "date": post.date,
+        "created_at": post.created_at,
+        "updated_at": post.updated_at,
+        "sentiment_score": post.sentiment_score,
+        "sentiment_label": post.sentiment_label,
+        "enhanced_category": post.enhanced_category,
+        "has_screenshots": bool(post.has_screenshots) if post.has_screenshots is not None else False,
+        "vision_analysis": vision_analysis,
+        "text_analysis": text_analysis,
+        "problem_severity": post.problem_severity,
+        "resolution_status": post.resolution_status,
+        "business_impact": post.business_impact,
+        "business_value": post.business_value,
+        "extracted_issues": extracted_issues,
+        "mentioned_products": mentioned_products,
+    }
+    
+    return PostResponse(**post_dict)
 
 @router.get("/", response_model=List[PostResponse])
 async def get_posts(
@@ -43,7 +104,7 @@ async def get_posts(
             sentiment=sentiment
         )
         
-        return [PostResponse.model_validate(post) for post in posts]
+        return [convert_db_post_to_response(post) for post in posts]
         
     except HTTPException:
         raise
@@ -59,7 +120,7 @@ async def get_post(post_id: int, db: Session = Depends(get_db)):
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
             
-        return PostResponse.model_validate(post)
+        return convert_db_post_to_response(post)
         
     except HTTPException:
         raise
