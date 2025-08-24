@@ -30,38 +30,78 @@ async def trigger_manual_scraping(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trigger-all")
-async def trigger_all_forums_scraping():
+async def trigger_all_forums_scraping(background_tasks: BackgroundTasks):
     """
     Trigger immediate scraping of all forums with progress tracking
     """
     try:
-        # Initialize scraper
-        scraper = AtlassianScraper()
+        async def scrape_all_task():
+            """Background task to scrape all forums"""
+            try:
+                logger.info("🚀 Starting background scraping of all forums...")
+                scraper = AtlassianScraper()
+                db_ops = DatabaseOperations()
+                
+                total_posts_scraped = 0
+                forums_scraped = []
+                
+                async with scraper:
+                    # Scrape each forum
+                    for forum_name in scraper.BASE_URLS.keys():
+                        try:
+                            logger.info(f"🔍 Scraping {forum_name}...")
+                            posts = await scraper.scrape_category(forum_name, max_posts=20, max_pages=2)
+                            
+                            # Store posts in database
+                            for post in posts:
+                                try:
+                                    await db_ops.create_or_update_post({
+                                        'title': post.get('title', 'No title'),
+                                        'content': post.get('content', 'No content'),
+                                        'author': post.get('author', 'Anonymous'),
+                                        'category': forum_name,
+                                        'url': post.get('url', ''),
+                                        'excerpt': post.get('excerpt', ''),
+                                        'date': post.get('date', datetime.now())
+                                    })
+                                except Exception as save_error:
+                                    logger.error(f"Error saving post: {save_error}")
+                                    continue
+                            
+                            total_posts_scraped += len(posts)
+                            if len(posts) > 0:
+                                forums_scraped.append(forum_name)
+                            
+                            logger.info(f"✅ Scraped {len(posts)} posts from {forum_name}")
+                            
+                        except Exception as forum_error:
+                            logger.error(f"❌ Error scraping {forum_name}: {forum_error}")
+                            continue
+                
+                logger.info(f"🎉 Background scraping completed! Total: {total_posts_scraped} posts from {len(forums_scraped)} forums")
+                
+            except Exception as e:
+                logger.error(f"❌ Background scraping task failed: {e}")
         
-        # Trigger scraping synchronously for immediate feedback
-        result = await scraper.scrape_all_forums()
+        # Start background task immediately
+        background_tasks.add_task(scrape_all_task)
         
-        if result.get('success'):
-            return {
-                "success": True,
-                "message": f"Successfully scraped {result.get('total_forums', 0)} forums",
-                "posts_scraped": result.get('total_posts', 0),
-                "forums_scraped": result.get('forums', []),
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            return {
-                "success": False,
-                "message": result.get('error', 'Scraping failed'),
-                "posts_scraped": 0,
-                "timestamp": datetime.now().isoformat()
-            }
+        # Return immediately with success
+        return {
+            "success": True,
+            "message": "Scraping initiated successfully",
+            "posts_scraped": "In progress...",
+            "forums": list(AtlassianScraper().BASE_URLS.keys()),
+            "status": "running",
+            "note": "Scraping is running in the background. Check posts page in 2-3 minutes for results.",
+            "timestamp": datetime.now().isoformat()
+        }
             
     except Exception as e:
         logger.error(f"Failed to trigger all forums scraping: {e}")
         return {
             "success": False,
-            "message": f"Scraping failed: {str(e)}",
+            "message": f"Scraping failed to start: {str(e)}",
             "posts_scraped": 0,
             "timestamp": datetime.now().isoformat()
         }
