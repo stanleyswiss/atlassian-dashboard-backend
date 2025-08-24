@@ -17,52 +17,50 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 # Global settings storage (in production, this should be in a database)
 _settings_storage = {
-    "openai_api_key": "",
     "scraping_enabled": False,
     "scraping_interval": 6,
-    "sentiment_analysis_enabled": False,
+    "vision_analysis_enabled": True,
     "max_posts_per_scrape": 50,
     "auto_cleanup_enabled": True,
-    "data_retention_days": 30
+    "data_retention_days": 30,
+    "max_pages_per_forum": 3
 }
 
 class SettingsConfig(BaseModel):
-    openai_api_key: str
     scraping_enabled: bool
     scraping_interval: int
-    sentiment_analysis_enabled: bool
+    vision_analysis_enabled: bool
     max_posts_per_scrape: int
     auto_cleanup_enabled: bool
     data_retention_days: int
+    max_pages_per_forum: int
 
 class OpenAITestRequest(BaseModel):
     api_key: str
     test_text: str = "This is a test message for sentiment analysis."
 
+@router.get("/config")
+async def get_settings_config():
+    """Get current application settings configuration"""
+    try:
+        # Return settings without sensitive information
+        return _settings_storage.copy()
+    except Exception as e:
+        logger.error(f"Error getting settings config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get settings config")
+
 @router.get("")
 async def get_settings():
-    """Get current application settings"""
+    """Get current application settings (legacy endpoint)"""
     try:
-        # In production, load from database or config file
-        # For now, return from memory with API key masked
-        settings = _settings_storage.copy()
-        
-        # Mask API key for security
-        if settings["openai_api_key"]:
-            key = settings["openai_api_key"]
-            if len(key) > 8:
-                settings["openai_api_key"] = key[:4] + "*" * (len(key) - 8) + key[-4:]
-            else:
-                settings["openai_api_key"] = "*" * len(key)
-        
-        return settings
+        return _settings_storage.copy()
     except Exception as e:
         logger.error(f"Error getting settings: {e}")
         raise HTTPException(status_code=500, detail="Failed to get settings")
 
-@router.post("")
-async def save_settings(config: SettingsConfig):
-    """Save application settings"""
+@router.post("/config")
+async def save_settings_config(config: SettingsConfig):
+    """Save application settings configuration"""
     try:
         # Validate settings
         if config.scraping_interval < 1 or config.scraping_interval > 24:
@@ -74,16 +72,13 @@ async def save_settings(config: SettingsConfig):
         if config.data_retention_days < 1 or config.data_retention_days > 365:
             raise HTTPException(status_code=400, detail="Data retention must be between 1 and 365 days")
         
+        if config.max_pages_per_forum < 1 or config.max_pages_per_forum > 10:
+            raise HTTPException(status_code=400, detail="Max pages per forum must be between 1 and 10")
+        
         # Update global settings
         _settings_storage.update(config.model_dump())
         
-        # Set environment variable for OpenAI key if provided
-        if config.openai_api_key and not config.openai_api_key.startswith("*"):
-            os.environ["OPENAI_API_KEY"] = config.openai_api_key
-            # Also update the openai client
-            openai.api_key = config.openai_api_key
-        
-        logger.info("Settings updated successfully")
+        logger.info("Settings configuration updated successfully")
         
         return {
             "message": "Settings saved successfully",
@@ -93,8 +88,13 @@ async def save_settings(config: SettingsConfig):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error saving settings: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save settings")
+        logger.error(f"Error saving settings config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save settings config")
+
+@router.post("")
+async def save_settings_legacy(config: SettingsConfig):
+    """Save application settings (legacy endpoint)"""
+    return await save_settings_config(config)
 
 @router.post("/test-openai")
 async def test_openai_connection(request: OpenAITestRequest):
@@ -161,18 +161,14 @@ async def reset_settings():
     try:
         global _settings_storage
         _settings_storage = {
-            "openai_api_key": "",
             "scraping_enabled": False,
             "scraping_interval": 6,
-            "sentiment_analysis_enabled": False,
+            "vision_analysis_enabled": True,
             "max_posts_per_scrape": 50,
             "auto_cleanup_enabled": True,
-            "data_retention_days": 30
+            "data_retention_days": 30,
+            "max_pages_per_forum": 3
         }
-        
-        # Clear OpenAI API key from environment
-        if "OPENAI_API_KEY" in os.environ:
-            del os.environ["OPENAI_API_KEY"]
         
         return {
             "message": "Settings reset to defaults",
@@ -184,11 +180,9 @@ async def reset_settings():
         raise HTTPException(status_code=500, detail="Failed to reset settings")
 
 @router.get("/status")
-async def get_system_status(db: Session = Depends(get_db)):
+async def get_system_status():
     """Get system status for all services"""
     try:
-        from database.operations import DatabaseOperations
-        
         status = {
             "database": {"status": "unknown", "message": "Not tested"},
             "openai": {"status": "unknown", "message": "Not tested"},
@@ -208,17 +202,17 @@ async def get_system_status(db: Session = Depends(get_db)):
         except Exception as e:
             status["database"] = {"status": "error", "message": f"Database error: {str(e)}"}
         
-        # Test OpenAI (only if API key is set)
-        if _settings_storage.get("openai_api_key") and not _settings_storage["openai_api_key"].startswith("*"):
+        # Test OpenAI (check environment variable instead of settings storage)
+        import os
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        if openai_key and openai_key.strip():
             try:
-                from services.ai_analyzer import AIAnalyzer
-                analyzer = AIAnalyzer()
-                # Quick test without full analysis
+                # Just check if key exists - don't actually call API to avoid costs
                 status["openai"] = {"status": "connected", "message": "OpenAI API key configured"}
             except Exception as e:
                 status["openai"] = {"status": "error", "message": f"OpenAI error: {str(e)}"}
         else:
-            status["openai"] = {"status": "not_configured", "message": "OpenAI API key not set"}
+            status["openai"] = {"status": "not_configured", "message": "OpenAI API key not set in environment"}
         
         return status
         
@@ -228,13 +222,13 @@ async def get_system_status(db: Session = Depends(get_db)):
 
 # Helper function to get current OpenAI API key
 def get_openai_api_key() -> str:
-    """Get the current OpenAI API key"""
-    return _settings_storage.get("openai_api_key", "")
+    """Get the current OpenAI API key from environment"""
+    return os.environ.get("OPENAI_API_KEY", "")
 
-# Helper function to check if sentiment analysis is enabled
-def is_sentiment_analysis_enabled() -> bool:
-    """Check if sentiment analysis is enabled"""
-    return _settings_storage.get("sentiment_analysis_enabled", False) and bool(_settings_storage.get("openai_api_key", ""))
+# Helper function to check if vision analysis is enabled
+def is_vision_analysis_enabled() -> bool:
+    """Check if vision analysis is enabled"""
+    return _settings_storage.get("vision_analysis_enabled", True) and bool(os.environ.get("OPENAI_API_KEY", ""))
 
 # Helper function to get scraping configuration
 def get_scraping_config() -> Dict[str, Any]:
