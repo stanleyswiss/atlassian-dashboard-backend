@@ -27,21 +27,28 @@ async def get_critical_issues(days: int = 7):
         # Get recent posts that might be critical issues
         recent_posts = db_ops.get_recent_posts(limit=50, days=days)
         
-        # Simple heuristic-based categorization for now
+        # Transform posts to match frontend CriticalIssue interface
         critical_issues = []
         for post in recent_posts:
             # Look for error/issue keywords in title
             title_lower = post.get('title', '').lower()
             if any(keyword in title_lower for keyword in ['error', 'bug', 'broken', 'failed', 'issue', 'problem']):
                 critical_issues.append({
-                    'id': post.get('id'),
-                    'title': post.get('title'),
-                    'category': post.get('category'),
-                    'url': post.get('url'),
-                    'date': post.get('date').isoformat() if post.get('date') else None,
-                    'severity': 'medium',  # Default for now
-                    'reports': 1,  # Default for now
-                    'business_impact': 'unknown'
+                    'issue_title': post.get('title'),
+                    'severity': 'high' if any(word in title_lower for word in ['critical', 'urgent', 'broken']) else 'medium',
+                    'report_count': 1,  # Default for now
+                    'affected_products': [post.get('category', 'unknown')],
+                    'first_reported': post.get('date').isoformat() if post.get('date') else None,
+                    'latest_report': post.get('date').isoformat() if post.get('date') else None,
+                    'business_impact': 'workflow_broken' if 'broken' in title_lower else 'productivity_loss',
+                    'sample_posts': [
+                        {
+                            'title': post.get('title'),
+                            'url': post.get('url', '#'),
+                            'author': post.get('author', 'Unknown')
+                        }
+                    ],
+                    'resolution_urgency': 'high' if any(word in title_lower for word in ['critical', 'urgent']) else 'medium'
                 })
         
         return critical_issues[:10]  # Return top 10
@@ -60,20 +67,23 @@ async def get_awesome_discoveries(days: int = 7):
         db_ops = DatabaseOperations()
         recent_posts = db_ops.get_recent_posts(limit=50, days=days)
         
-        # Look for posts with positive keywords
+        # Look for posts with positive keywords - match frontend interface
         awesome_discoveries = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
             if any(keyword in title_lower for keyword in ['success', 'solution', 'solved', 'working', 'tutorial', 'guide', 'how to']):
                 awesome_discoveries.append({
-                    'id': post.get('id'),
-                    'title': post.get('title'),
+                    'discovery_title': post.get('title'),
                     'category': post.get('category'),
-                    'url': post.get('url'),
-                    'date': post.get('date').isoformat() if post.get('date') else None,
-                    'engagement_potential': 'medium',
-                    'technical_complexity': 'medium',
-                    'use_case_type': 'workflow_optimization'
+                    'description': post.get('excerpt', post.get('title', '')[:100] + '...'),
+                    'url': post.get('url', '#'),
+                    'date_discovered': post.get('date').isoformat() if post.get('date') else None,
+                    'author': post.get('author', 'Unknown'),
+                    'engagement_potential': 'high' if any(word in title_lower for word in ['tutorial', 'guide', 'how to']) else 'medium',
+                    'technical_complexity': 'high' if any(word in title_lower for word in ['advanced', 'complex', 'technical']) else 'medium',
+                    'use_case_type': 'workflow_optimization',
+                    'potential_reach': 'wide',
+                    'implementation_difficulty': 'medium'
                 })
         
         return awesome_discoveries[:10]
@@ -91,20 +101,23 @@ async def get_trending_solutions(days: int = 7):
         db_ops = DatabaseOperations()
         recent_posts = db_ops.get_recent_posts(limit=50, days=days)
         
-        # Look for solution keywords
+        # Look for solution keywords - match frontend interface  
         trending_solutions = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
             if any(keyword in title_lower for keyword in ['fix', 'solution', 'resolved', 'workaround', 'answer']):
                 trending_solutions.append({
-                    'id': post.get('id'),
-                    'title': post.get('title'),
+                    'solution_title': post.get('title'),
                     'category': post.get('category'),
-                    'url': post.get('url'),
-                    'date': post.get('date').isoformat() if post.get('date') else None,
-                    'effectiveness_score': 75,  # Default
-                    'users_helped': 5,  # Default
-                    'has_visual_guide': False  # Default
+                    'description': post.get('excerpt', post.get('title', '')[:100] + '...'),
+                    'url': post.get('url', '#'),
+                    'date_published': post.get('date').isoformat() if post.get('date') else None,
+                    'author': post.get('author', 'Unknown'),
+                    'effectiveness_score': 85 if 'resolved' in title_lower else 75,
+                    'users_helped': 10 if 'fix' in title_lower else 5,
+                    'has_visual_guide': 'screenshot' in title_lower or 'image' in title_lower,
+                    'problem_type': 'configuration' if any(word in title_lower for word in ['config', 'setup', 'install']) else 'bug_fix',
+                    'difficulty_level': 'advanced' if any(word in title_lower for word in ['advanced', 'complex']) else 'beginner'
                 })
         
         return trending_solutions[:10]
@@ -122,20 +135,32 @@ async def get_unresolved_problems(days: int = 14):
         db_ops = DatabaseOperations()
         recent_posts = db_ops.get_recent_posts(limit=50, days=days)
         
-        # Look for unsolved problems
+        # Look for unsolved problems - match frontend interface
         unresolved_problems = []
         for post in recent_posts:
             title_lower = post.get('title', '').lower()
             if any(keyword in title_lower for keyword in ['help', 'stuck', 'problem', 'not working', 'issue']):
+                # Calculate days since post
+                days_ago = 1
+                if post.get('date'):
+                    from datetime import datetime
+                    post_date = post.get('date')
+                    if isinstance(post_date, str):
+                        post_date = datetime.fromisoformat(post_date.replace('Z', '+00:00'))
+                    days_ago = max(1, (datetime.now() - post_date.replace(tzinfo=None)).days)
+                
                 unresolved_problems.append({
-                    'id': post.get('id'),
-                    'title': post.get('title'),
+                    'problem_title': post.get('title'),
                     'category': post.get('category'),
-                    'url': post.get('url'),
-                    'date': post.get('date').isoformat() if post.get('date') else None,
-                    'days_unresolved': 3,  # Default
-                    'help_requests': 1,  # Default
-                    'help_potential': 'medium'
+                    'description': post.get('excerpt', post.get('title', '')[:100] + '...'),
+                    'url': post.get('url', '#'),
+                    'date_posted': post.get('date').isoformat() if post.get('date') else None,
+                    'author': post.get('author', 'Unknown'),
+                    'days_unresolved': days_ago,
+                    'help_requests': 1,
+                    'help_potential': 'high' if any(word in title_lower for word in ['urgent', 'critical', 'help']) else 'medium',
+                    'complexity_level': 'high' if any(word in title_lower for word in ['complex', 'advanced']) else 'medium',
+                    'community_interest': 'medium'
                 })
         
         return unresolved_problems[:10]
