@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Date, JSON
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Date
 from sqlalchemy.sql import func
 from datetime import datetime
 from .connection import Base
@@ -21,15 +21,15 @@ class PostDB(Base):
     
     # Enhanced analysis fields
     enhanced_category = Column(String(50), nullable=True, index=True)  # critical_issue, solution_sharing, etc.
-    has_screenshots = Column(Integer, nullable=True, default=0)  # 0/1 boolean
-    vision_analysis = Column(JSON, nullable=True)  # Vision AI analysis results
-    text_analysis = Column(JSON, nullable=True)  # Enhanced text analysis
+    has_screenshots = Column(Integer, nullable=True, default=0)  # 0/1 boolean (as INTEGER)
+    vision_analysis = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
+    text_analysis = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
     problem_severity = Column(String(20), nullable=True, index=True)  # critical, high, medium, low, none
     resolution_status = Column(String(20), nullable=True, index=True)  # resolved, in_progress, needs_help, unanswered
     business_impact = Column(String(30), nullable=True, index=True)  # productivity_loss, workflow_broken, etc.
-    business_value = Column(String(50), nullable=True)  # high, medium, low
-    extracted_issues = Column(JSON, nullable=True, default=list)  # List of issues found
-    mentioned_products = Column(JSON, nullable=True, default=list)  # Products mentioned in post
+    business_value = Column(Integer, nullable=True, default=0)  # Use INTEGER to match current schema
+    extracted_issues = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
+    mentioned_products = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
     
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)
