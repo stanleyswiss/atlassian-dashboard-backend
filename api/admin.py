@@ -300,6 +300,59 @@ async def create_settings_table():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.get("/debug-settings")
+async def debug_settings():
+    """Debug settings persistence - test if settings can be read/written"""
+    try:
+        from api.settings import get_all_settings, set_setting_in_db, get_setting_from_db
+        
+        # Test 1: Try to read current settings
+        current_settings = get_all_settings()
+        
+        # Test 2: Try to write a test setting
+        test_write = set_setting_in_db("debug_test", "test_value", "string")
+        
+        # Test 3: Try to read the test setting back
+        test_read = get_setting_from_db("debug_test", "not_found")
+        
+        # Test 4: Check if settings table has any data
+        from database.connection import get_session
+        from database.models import SettingsDB
+        
+        with get_session() as db:
+            settings_count = db.query(SettingsDB).count()
+            all_settings_in_db = db.query(SettingsDB).all()
+            
+            db_settings_list = [
+                {
+                    "key": s.key,
+                    "value": s.value,
+                    "value_type": s.value_type,
+                    "created_at": s.created_at.isoformat()
+                }
+                for s in all_settings_in_db
+            ]
+        
+        return {
+            "success": True,
+            "debug_info": {
+                "current_settings": current_settings,
+                "test_write_success": test_write,
+                "test_read_result": test_read,
+                "settings_count_in_db": settings_count,
+                "all_db_settings": db_settings_list
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Settings debug error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/database-info")
 async def get_database_info():
     """Get information about the current database schema"""
