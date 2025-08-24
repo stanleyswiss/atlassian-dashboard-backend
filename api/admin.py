@@ -162,6 +162,36 @@ async def migrate_database(force_recreate: bool = False):
                     added_columns.append("analytics_table")
                     logger.info("Created analytics table")
                 
+                # Check if settings table exists, if not create it
+                if not inspector.has_table('settings'):
+                    if is_postgres:
+                        settings_sql = """
+                        CREATE TABLE settings (
+                            id SERIAL PRIMARY KEY,
+                            key VARCHAR(100) NOT NULL UNIQUE,
+                            value TEXT NOT NULL,
+                            value_type VARCHAR(20) DEFAULT 'string',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                        CREATE INDEX idx_settings_key ON settings(key);
+                        """
+                    else:
+                        settings_sql = """
+                        CREATE TABLE settings (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            key VARCHAR(100) NOT NULL UNIQUE,
+                            value TEXT NOT NULL,
+                            value_type VARCHAR(20) DEFAULT 'string',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                        CREATE INDEX idx_settings_key ON settings(key);
+                        """
+                    conn.execute(text(settings_sql))
+                    added_columns.append("settings_table")
+                    logger.info("Created settings table")
+                
                 # Commit transaction
                 trans.commit()
                 
