@@ -187,9 +187,9 @@ class VisionAnalyzer:
             
             try:
                 if self.openai_client:
-                    # New OpenAI client (v1.0+)
-                    logger.info("Using OpenAI v1.0+ client for vision analysis")
-                    response = await self.openai_client.chat.completions.create(
+                    # New OpenAI client (v1.0+) - synchronous call
+                    logger.info("Using OpenAI v1.0+ client for vision analysis (synchronous)")
+                    response = self.openai_client.chat.completions.create(
                         model="gpt-4-vision-preview",
                         messages=messages,
                         max_tokens=800,

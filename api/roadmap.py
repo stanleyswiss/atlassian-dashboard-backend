@@ -174,9 +174,9 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
         
         # Try new OpenAI client first, fallback to legacy
         try:
-            # New OpenAI client (v1.0+)
+            # New OpenAI client (v1.0+) - synchronous call
             client = openai.OpenAI(api_key=openai_key)
-            response = await client.chat.completions.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},

@@ -226,9 +226,9 @@ class ContentIntelligenceService:
             
             try:
                 if self.openai_client:
-                    # New OpenAI client (v1.0+)
-                    logger.info("Using OpenAI v1.0+ client for content intelligence")
-                    response = await self.openai_client.chat.completions.create(
+                    # New OpenAI client (v1.0+) - synchronous call
+                    logger.info("Using OpenAI v1.0+ client for content intelligence (synchronous)")
+                    response = self.openai_client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=messages,
                         max_tokens=800,
