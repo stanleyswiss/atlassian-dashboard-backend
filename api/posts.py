@@ -16,13 +16,24 @@ def convert_db_post_to_response(post) -> PostResponse:
     
     def safe_json_parse(value, default):
         """Safely parse JSON string, return default on error"""
-        if not value:
+        if value is None:
+            return default
+        if not value:  # Empty string, 0, False, etc.
             return default
         if not isinstance(value, str):
             return value if value is not None else default
+        if value.strip() == '':  # Empty or whitespace-only string
+            return default
         try:
-            return json.loads(value)
-        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed = json.loads(value)
+            # If it's an empty dict/list that got stored somehow, return default
+            if parsed == {} and isinstance(default, list):
+                return default
+            if parsed == [] and isinstance(default, dict):
+                return default
+            return parsed
+        except (json.JSONDecodeError, TypeError, ValueError, AttributeError) as e:
+            logger.warning(f"JSON parse error for value '{value}': {e}")
             return default
     
     # Parse JSON fields safely and quickly
@@ -72,6 +83,57 @@ async def debug_posts_count(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Debug count error: {e}")
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@router.get("/debug/convert")
+async def debug_post_conversion(limit: int = 3, db: Session = Depends(get_db)):
+    """Debug endpoint to test PostResponse conversion"""
+    try:
+        posts = PostOperations.get_posts(db=db, limit=limit)
+        
+        converted_posts = []
+        errors = []
+        
+        for i, post in enumerate(posts):
+            try:
+                logger.info(f"Converting post {post.id}")
+                converted_post = convert_db_post_to_response(post)
+                converted_posts.append({
+                    "id": converted_post.id,
+                    "title": converted_post.title[:50] + "..." if len(converted_post.title) > 50 else converted_post.title,
+                    "category": converted_post.category,
+                    "enhanced_category": converted_post.enhanced_category,
+                    "has_vision": bool(converted_post.vision_analysis),
+                    "has_text": bool(converted_post.text_analysis),
+                    "status": "success"
+                })
+            except Exception as e:
+                logger.error(f"Error converting post {post.id}: {e}")
+                import traceback
+                error_info = {
+                    "post_id": post.id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                    "raw_vision_type": type(post.vision_analysis).__name__,
+                    "raw_text_type": type(post.text_analysis).__name__,
+                }
+                errors.append(error_info)
+                
+        return {
+            "success": True,
+            "converted_count": len(converted_posts),
+            "error_count": len(errors),
+            "converted_posts": converted_posts,
+            "errors": errors
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug conversion error: {e}")
         import traceback
         return {
             "success": False,

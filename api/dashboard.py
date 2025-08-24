@@ -17,13 +17,24 @@ def convert_db_post_to_response(post) -> PostResponse:
     
     def safe_json_parse(value, default):
         """Safely parse JSON string, return default on error"""
-        if not value:
+        if value is None:
+            return default
+        if not value:  # Empty string, 0, False, etc.
             return default
         if not isinstance(value, str):
             return value if value is not None else default
+        if value.strip() == '':  # Empty or whitespace-only string
+            return default
         try:
-            return json.loads(value)
-        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed = json.loads(value)
+            # If it's an empty dict/list that got stored somehow, return default
+            if parsed == {} and isinstance(default, list):
+                return default
+            if parsed == [] and isinstance(default, dict):
+                return default
+            return parsed
+        except (json.JSONDecodeError, TypeError, ValueError, AttributeError) as e:
+            logger.warning(f"JSON parse error for value '{value}': {e}")
             return default
     
     # Parse JSON fields safely and quickly
