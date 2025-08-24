@@ -15,9 +15,21 @@ class PostDB(Base):
     excerpt = Column(String(500), nullable=False)
     date = Column(DateTime, nullable=False, index=True)
     
-    # Sentiment analysis fields
+    # Sentiment analysis fields (legacy)
     sentiment_score = Column(Float, nullable=True)  # -1.0 to 1.0
     sentiment_label = Column(String(20), nullable=True, index=True)  # positive, negative, neutral
+    
+    # Enhanced analysis fields
+    enhanced_category = Column(String(50), nullable=True, index=True)  # critical_issue, solution_sharing, etc.
+    has_screenshots = Column(Integer, nullable=True, default=0)  # 0/1 boolean
+    vision_analysis = Column(JSON, nullable=True)  # Vision AI analysis results
+    text_analysis = Column(JSON, nullable=True)  # Enhanced text analysis
+    problem_severity = Column(String(20), nullable=True, index=True)  # critical, high, medium, low, none
+    resolution_status = Column(String(20), nullable=True, index=True)  # resolved, in_progress, needs_help, unanswered
+    business_impact = Column(String(30), nullable=True, index=True)  # productivity_loss, workflow_broken, etc.
+    business_value = Column(String(50), nullable=True)  # high, medium, low
+    extracted_issues = Column(JSON, nullable=True, default=list)  # List of issues found
+    mentioned_products = Column(JSON, nullable=True, default=list)  # Products mentioned in post
     
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)

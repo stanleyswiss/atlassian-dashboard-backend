@@ -37,6 +37,16 @@ class Settings:
         # Background tasks
         self.data_collection_interval = int(os.getenv("DATA_COLLECTION_INTERVAL", 3600))
         self.sentiment_batch_size = int(os.getenv("SENTIMENT_BATCH_SIZE", 10))
+        
+        # Vision Analysis settings
+        self.enable_vision_analysis = os.getenv("ENABLE_VISION_ANALYSIS", "true").lower() == "true"
+        self.vision_analysis_batch_size = int(os.getenv("VISION_ANALYSIS_BATCH_SIZE", 5))
+        self.max_images_per_post = int(os.getenv("MAX_IMAGES_PER_POST", 5))
+        self.vision_analysis_cache_ttl = int(os.getenv("VISION_ANALYSIS_CACHE_TTL", 86400))
+        
+        # Enhanced Analytics settings
+        self.enable_problem_tracking = os.getenv("ENABLE_PROBLEM_TRACKING", "true").lower() == "true"
+        self.business_insights_update_interval = int(os.getenv("BUSINESS_INSIGHTS_UPDATE_INTERVAL", 3600))
     
     @property
     def is_production(self) -> bool:

@@ -22,7 +22,7 @@ class AtlassianScraper:
         "jsm": "https://community.atlassian.com/forums/Jira-Service-Management/ct-p/jira-service-desk", 
         "confluence": "https://community.atlassian.com/t5/Confluence-questions/bd-p/confluence-questions",
         "rovo": "https://community.atlassian.com/forums/Rovo/ct-p/rovo-atlassian-intelligence",
-        "announcements": "https://www.atlassian.com/blog/announcements"
+        "announcements": "https://community.atlassian.com/forums/Community-Announcements/gh-p/community-announcements"
     }
     
     def __init__(self):
@@ -126,8 +126,53 @@ class AtlassianScraper:
                 logger.warning(f"Error parsing post link: {e}")
                 continue
                 
-        logger.info(f"📋 Found {len(posts)} posts from {category} category")
+        logger.info(f"📋 Found {len(posts)} posts from {category} category on this page")
         return posts
+        
+    def find_next_page_url(self, html: str, current_url: str) -> Optional[str]:
+        """Find the URL for the next page in pagination"""
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Common pagination selectors for Atlassian Community
+        next_page_selectors = [
+            'a[aria-label="Next page"]',
+            'a[title="Next page"]', 
+            '.lia-paging-next-page',
+            '.paging-next a',
+            'a.lia-link-navigation[href*="page"]',
+            '.next a',
+            'a:contains("Next")',
+            'a[href*="/page/"]'
+        ]
+        
+        for selector in next_page_selectors:
+            next_link = soup.select_one(selector)
+            if next_link and next_link.get('href'):
+                next_url = urljoin(current_url, next_link.get('href'))
+                logger.info(f"🔗 Found next page: {next_url}")
+                return next_url
+                
+        # Try to find pagination with page numbers
+        page_links = soup.select('a[href*="page"]')
+        current_page_num = 1
+        
+        # Extract current page number from URL or find indicators
+        if '/page/' in current_url:
+            try:
+                current_page_num = int(re.search(r'/page/(\d+)', current_url).group(1))
+            except:
+                pass
+        
+        # Look for next sequential page
+        next_page_num = current_page_num + 1
+        for link in page_links:
+            href = link.get('href', '')
+            if f'/page/{next_page_num}' in href or f'page={next_page_num}' in href:
+                next_url = urljoin(current_url, href)
+                logger.info(f"🔗 Found next page by number: {next_url}")
+                return next_url
+                
+        return None
         
     async def scrape_post_content(self, post_url: str) -> Optional[Dict]:
         """Scrape individual post content"""
@@ -227,31 +272,59 @@ class AtlassianScraper:
             logger.error(f"Error parsing post content from {post_url}: {e}")
             return None
             
-    async def scrape_category(self, category: str, max_posts: int = 50) -> List[Dict]:
-        """Scrape posts from a specific category"""
+    async def scrape_category(self, category: str, max_posts: int = 50, max_pages: int = 3) -> List[Dict]:
+        """Scrape posts from a specific category across multiple pages"""
         if category not in self.BASE_URLS:
             logger.error(f"Unknown category: {category}")
             return []
             
         base_url = self.BASE_URLS[category]
-        logger.info(f"🔍 Scraping {category} from {base_url}")
+        logger.info(f"🔍 Scraping {category} from {base_url} (up to {max_pages} pages)")
         
-        # Get the forum page
-        html = await self.fetch_page(base_url)
-        if not html:
-            logger.error(f"Failed to fetch forum page for {category}")
-            return []
+        all_post_links = []
+        current_url = base_url
+        page_num = 1
+        
+        # Scrape multiple pages
+        while current_url and page_num <= max_pages and len(all_post_links) < max_posts:
+            logger.info(f"📄 Fetching page {page_num} for {category}: {current_url}")
             
-        # Parse post list
-        post_links = self.parse_post_list(html, base_url, category)
+            # Get the forum page
+            html = await self.fetch_page(current_url)
+            if not html:
+                logger.error(f"Failed to fetch forum page {page_num} for {category}")
+                break
+                
+            # Parse post list from this page
+            page_posts = self.parse_post_list(html, current_url, category)
+            
+            if not page_posts:
+                logger.info(f"No posts found on page {page_num}, stopping pagination for {category}")
+                break
+                
+            all_post_links.extend(page_posts)
+            logger.info(f"📋 Collected {len(page_posts)} posts from page {page_num} (total: {len(all_post_links)})")
+            
+            # Look for next page
+            next_url = self.find_next_page_url(html, current_url)
+            if not next_url or next_url == current_url:
+                logger.info(f"No more pages found for {category}")
+                break
+                
+            current_url = next_url
+            page_num += 1
+            
+            # Delay between pages
+            await asyncio.sleep(settings.scraper_delay * 2)
         
-        # Limit posts
-        post_links = post_links[:max_posts]
+        # Limit total posts
+        all_post_links = all_post_links[:max_posts]
+        logger.info(f"📊 Found {len(all_post_links)} total posts across {page_num-1} pages for {category}")
         
         # Scrape individual posts
         posts = []
-        for i, post_info in enumerate(post_links):
-            logger.info(f"📄 Scraping post {i+1}/{len(post_links)} from {category}")
+        for i, post_info in enumerate(all_post_links):
+            logger.info(f"📄 Scraping post {i+1}/{len(all_post_links)} from {category}")
             
             post_content = await self.scrape_post_content(post_info['url'])
             if post_content:
@@ -269,15 +342,15 @@ class AtlassianScraper:
         logger.info(f"✅ Completed scraping {len(posts)} posts from {category}")
         return posts
         
-    async def scrape_all_categories(self, max_posts_per_category: int = 20) -> Dict[str, List[Dict]]:
-        """Scrape all Atlassian community categories"""
-        logger.info(f"🚀 Starting full community scrape ({max_posts_per_category} posts per category)")
+    async def scrape_all_categories(self, max_posts_per_category: int = 20, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
+        """Scrape all Atlassian community categories across multiple pages"""
+        logger.info(f"🚀 Starting full community scrape ({max_posts_per_category} posts per category, up to {max_pages_per_category} pages each)")
         
         results = {}
         
         for category in self.BASE_URLS.keys():
             try:
-                posts = await self.scrape_category(category, max_posts_per_category)
+                posts = await self.scrape_category(category, max_posts_per_category, max_pages_per_category)
                 results[category] = posts
                 logger.info(f"✅ {category}: {len(posts)} posts scraped")
                 
@@ -308,7 +381,7 @@ class AtlassianScraper:
         return unique_posts
 
 # Async helper function for easy usage
-async def scrape_atlassian_community(max_posts_per_category: int = 20) -> Dict[str, List[Dict]]:
-    """Convenience function to scrape all categories"""
+async def scrape_atlassian_community(max_posts_per_category: int = 20, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
+    """Convenience function to scrape all categories across multiple pages"""
     async with AtlassianScraper() as scraper:
-        return await scraper.scrape_all_categories(max_posts_per_category)
+        return await scraper.scrape_all_categories(max_posts_per_category, max_pages_per_category)

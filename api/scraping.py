@@ -45,7 +45,7 @@ async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: in
             async with scraper:
                 for forum in working_forums:
                     logger.info(f"🔍 Scraping real content from {forum}")
-                    posts = await scraper.scrape_category(forum, max_posts)
+                    posts = await scraper.scrape_category(forum, max_posts, max_pages=3)
                     
                     # Store posts in database
                     for post in posts:
@@ -96,8 +96,8 @@ async def populate_real_data_now(background_tasks: BackgroundTasks):
                     logger.info(f"🔍 Scraping real content from {forum}...")
                     
                     try:
-                        # Scrape 25 posts per forum for good coverage
-                        posts = await scraper.scrape_category(forum, max_posts=25)
+                        # Scrape 25 posts per forum across 3 pages for better coverage
+                        posts = await scraper.scrape_category(forum, max_posts=25, max_pages=3)
                         logger.info(f"📋 Found {len(posts)} real posts from {forum}")
                         
                         # Store each post
@@ -210,7 +210,7 @@ async def test_single_forum_scraping(forum: str):
         
         # Test scrape single forum
         async with scraper:
-            posts = await scraper.scrape_category(forum, max_posts=5)
+            posts = await scraper.scrape_category(forum, max_posts=5, max_pages=2)
         
         return {
             "forum": forum,
