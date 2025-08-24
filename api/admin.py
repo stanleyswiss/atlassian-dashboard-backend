@@ -443,7 +443,7 @@ async def analyze_posts_status():
         }
 
 @router.post("/analyze-all-posts")
-async def analyze_all_posts_with_ai(batch_size: int = 5):
+async def analyze_all_posts_with_ai(batch_size: int = 5, force_reanalyze: bool = False):
     """Analyze all existing posts with Vision AI and enhanced analysis (chunked processing)"""
     try:
         from database.connection import get_session
@@ -460,11 +460,16 @@ async def analyze_all_posts_with_ai(batch_size: int = 5):
             }
         
         with get_session() as db:
-            # Get all posts without analysis
-            posts_to_analyze = db.query(PostDB).filter(
-                (PostDB.vision_analysis.is_(None)) | 
-                (PostDB.enhanced_category.is_(None))
-            ).limit(batch_size).all()  # Process in smaller batches
+            if force_reanalyze:
+                # Force re-analysis of all posts (ignoring existing analysis)
+                posts_to_analyze = db.query(PostDB).limit(batch_size).all()
+                logger.info(f"🔄 Force re-analyzing {len(posts_to_analyze)} posts (ignoring existing analysis)")
+            else:
+                # Get posts without analysis only
+                posts_to_analyze = db.query(PostDB).filter(
+                    (PostDB.vision_analysis.is_(None)) | 
+                    (PostDB.enhanced_category.is_(None))
+                ).limit(batch_size).all()  # Process in smaller batches
             
             if not posts_to_analyze:
                 return {
@@ -476,10 +481,13 @@ async def analyze_all_posts_with_ai(batch_size: int = 5):
                 }
             
             # Count total remaining posts
-            total_remaining = db.query(PostDB).filter(
-                (PostDB.vision_analysis.is_(None)) | 
-                (PostDB.enhanced_category.is_(None))
-            ).count()
+            if force_reanalyze:
+                total_remaining = db.query(PostDB).count()
+            else:
+                total_remaining = db.query(PostDB).filter(
+                    (PostDB.vision_analysis.is_(None)) | 
+                    (PostDB.enhanced_category.is_(None))
+                ).count()
             
             analyzer = EnhancedAnalyzer()
             analyzed_count = 0
@@ -587,6 +595,11 @@ async def analyze_all_posts_with_ai(batch_size: int = 5):
 async def analyze_next_batch(batch_size: int = 3):
     """Continue analyzing posts in small batches to avoid timeouts"""
     return await analyze_all_posts_with_ai(batch_size)
+
+@router.post("/force-reanalyze-posts")
+async def force_reanalyze_all_posts(batch_size: int = 5):
+    """Force re-analysis of all posts with real OpenAI API (replaces mock data)"""
+    return await analyze_all_posts_with_ai(batch_size, force_reanalyze=True)
 
 @router.post("/test-openai-call")
 async def test_single_openai_call():
