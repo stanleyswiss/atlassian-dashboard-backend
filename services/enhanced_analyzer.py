@@ -153,12 +153,26 @@ class EnhancedAnalyzer:
                     tokens = response.usage.total_tokens if hasattr(response, 'usage') else 'unknown'
                 
                 logger.info(f"✅ OpenAI API call successful for post {post.get('id', 'unknown')}, response tokens: {tokens}")
+                logger.info(f"🔍 OpenAI response content: {content[:200]}...")
                 
-                # Parse response
+                # Parse response with better JSON handling
                 import json
-                result = json.loads(content)
-                logger.info(f"📊 Parsed AI analysis result: {list(result.keys()) if isinstance(result, dict) else 'invalid'}")
-                return result
+                try:
+                    # Try to extract JSON from response if it's embedded in text
+                    if '{' in content and '}' in content:
+                        json_start = content.find('{')
+                        json_end = content.rfind('}') + 1
+                        json_text = content[json_start:json_end]
+                        result = json.loads(json_text)
+                        logger.info(f"📊 Parsed AI analysis result: {list(result.keys()) if isinstance(result, dict) else 'invalid'}")
+                        return result
+                    else:
+                        # No JSON found, create structured response from text
+                        logger.warning(f"No JSON found in response, creating structured fallback")
+                        return self._parse_text_response_to_dict(content, post)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON parsing failed: {e}, creating structured fallback")
+                    return self._parse_text_response_to_dict(content, post)
                 
             except Exception as api_error:
                 logger.error(f"OpenAI API call failed: {api_error}")
@@ -255,6 +269,62 @@ class EnhancedAnalyzer:
             insights["training_opportunity"] = True
         
         return insights
+    
+    def _parse_text_response_to_dict(self, content: str, post: Dict) -> Dict[str, Any]:
+        """
+        Parse non-JSON OpenAI response into structured data
+        """
+        logger.info(f"📝 Parsing text response to structured data")
+        
+        # Create default structure
+        result = {
+            "primary_intent": "ask_question",
+            "urgency_level": "medium",
+            "technical_complexity": "intermediate", 
+            "problem_indicators": [],
+            "solution_indicators": [],
+            "mentioned_products": [],
+            "topic_keywords": [],
+            "user_sentiment": "neutral",
+            "resolution_status": "unanswered"
+        }
+        
+        # Basic keyword analysis on the response content and original post
+        content_lower = content.lower()
+        title_content = f"{post.get('title', '')} {post.get('content', '')}".lower()
+        
+        # Determine intent from keywords
+        if any(word in content_lower for word in ['error', 'issue', 'problem', 'broken', 'fail']):
+            result["primary_intent"] = "report_problem"
+        elif any(word in content_lower for word in ['solution', 'fix', 'resolve', 'workaround']):
+            result["primary_intent"] = "share_solution"
+        elif any(word in content_lower for word in ['how to', 'help', 'guidance']):
+            result["primary_intent"] = "seek_help"
+        
+        # Determine urgency
+        if any(word in content_lower for word in ['critical', 'urgent', 'blocking']):
+            result["urgency_level"] = "critical"
+        elif any(word in content_lower for word in ['important', 'asap']):
+            result["urgency_level"] = "high"
+        
+        # Determine sentiment
+        if any(word in content_lower for word in ['frustrated', 'annoying', 'terrible']):
+            result["user_sentiment"] = "frustrated"
+        elif any(word in content_lower for word in ['great', 'excellent', 'perfect']):
+            result["user_sentiment"] = "excited"
+        
+        # Extract products mentioned
+        products = ['jira', 'confluence', 'bitbucket', 'jsm', 'rovo']
+        mentioned = [p for p in products if p in title_content]
+        result["mentioned_products"] = mentioned
+        
+        # Basic keywords from title
+        title = post.get('title', '')
+        keywords = [word.strip() for word in title.split() if len(word) > 3][:5]
+        result["topic_keywords"] = keywords
+        
+        logger.info(f"📊 Created structured analysis from text response")
+        return result
     
     async def generate_business_intelligence_report(self, days: int = 7) -> Dict[str, Any]:
         """
