@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 import json
+from datetime import datetime
 
 from database import get_db, PostOperations
 from models import PostResponse, PostCreate, PostUpdate, SentimentLabel, PostCategory
@@ -13,34 +14,22 @@ router = APIRouter(prefix="/api/posts", tags=["posts"])
 def convert_db_post_to_response(post) -> PostResponse:
     """Convert database post model to response model, parsing JSON fields"""
     
-    # Parse JSON fields if they exist
-    vision_analysis = None
-    if post.vision_analysis:
+    def safe_json_parse(value, default):
+        """Safely parse JSON string, return default on error"""
+        if not value:
+            return default
+        if not isinstance(value, str):
+            return value if value is not None else default
         try:
-            vision_analysis = json.loads(post.vision_analysis) if isinstance(post.vision_analysis, str) else post.vision_analysis
-        except (json.JSONDecodeError, TypeError):
-            vision_analysis = {}
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return default
     
-    text_analysis = None
-    if post.text_analysis:
-        try:
-            text_analysis = json.loads(post.text_analysis) if isinstance(post.text_analysis, str) else post.text_analysis
-        except (json.JSONDecodeError, TypeError):
-            text_analysis = {}
-    
-    extracted_issues = []
-    if post.extracted_issues:
-        try:
-            extracted_issues = json.loads(post.extracted_issues) if isinstance(post.extracted_issues, str) else post.extracted_issues
-        except (json.JSONDecodeError, TypeError):
-            extracted_issues = []
-    
-    mentioned_products = []
-    if post.mentioned_products:
-        try:
-            mentioned_products = json.loads(post.mentioned_products) if isinstance(post.mentioned_products, str) else post.mentioned_products
-        except (json.JSONDecodeError, TypeError):
-            mentioned_products = []
+    # Parse JSON fields safely and quickly
+    vision_analysis = safe_json_parse(post.vision_analysis, {})
+    text_analysis = safe_json_parse(post.text_analysis, {})
+    extracted_issues = safe_json_parse(post.extracted_issues, [])
+    mentioned_products = safe_json_parse(post.mentioned_products, [])
     
     # Create response model with parsed JSON
     post_dict = {
@@ -81,6 +70,12 @@ async def get_posts(
 ):
     """Get posts with filtering and pagination"""
     try:
+        logger.info(f"Getting posts: skip={skip}, limit={limit}, category={category}")
+        start_time = datetime.now()
+        
+        # Limit to prevent timeouts
+        safe_limit = min(limit, 50)  # Cap at 50 for now
+        logger.info(f"Using safe_limit: {safe_limit}")
         # Validate category if provided
         if category and category not in [cat.value for cat in PostCategory]:
             raise HTTPException(
@@ -98,13 +93,22 @@ async def get_posts(
         posts = PostOperations.get_posts(
             db=db,
             skip=skip,
-            limit=limit,
+            limit=safe_limit,  # Use safe limit
             category=category,
             author=author,
             sentiment=sentiment
         )
         
-        return [convert_db_post_to_response(post) for post in posts]
+        logger.info(f"Retrieved {len(posts)} posts from database")
+        
+        # Convert posts with timing
+        response_posts = [convert_db_post_to_response(post) for post in posts]
+        
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        logger.info(f"Posts API completed in {duration:.2f} seconds")
+        
+        return response_posts
         
     except HTTPException:
         raise
@@ -142,7 +146,7 @@ async def create_post(post: PostCreate, db: Session = Depends(get_db)):
             )
         
         db_post = PostOperations.create_post(db, post)
-        return PostResponse.model_validate(db_post)
+        return convert_db_post_to_response(db_post)
         
     except HTTPException:
         raise
@@ -180,7 +184,7 @@ async def update_post(
         if not updated_post:
             raise HTTPException(status_code=404, detail="Post not found")
             
-        return PostResponse.model_validate(updated_post)
+        return convert_db_post_to_response(updated_post)
         
     except HTTPException:
         raise
@@ -228,7 +232,7 @@ async def search_posts_by_content(
                   .limit(limit)\
                   .all()
         
-        return [PostResponse.model_validate(post) for post in posts]
+        return [convert_db_post_to_response(post) for post in posts]
         
     except Exception as e:
         logger.error(f"Error searching posts: {e}")

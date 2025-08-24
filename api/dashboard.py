@@ -15,34 +15,22 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 def convert_db_post_to_response(post) -> PostResponse:
     """Convert database post model to response model, parsing JSON fields"""
     
-    # Parse JSON fields if they exist
-    vision_analysis = None
-    if post.vision_analysis:
+    def safe_json_parse(value, default):
+        """Safely parse JSON string, return default on error"""
+        if not value:
+            return default
+        if not isinstance(value, str):
+            return value if value is not None else default
         try:
-            vision_analysis = json.loads(post.vision_analysis) if isinstance(post.vision_analysis, str) else post.vision_analysis
-        except (json.JSONDecodeError, TypeError):
-            vision_analysis = {}
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return default
     
-    text_analysis = None
-    if post.text_analysis:
-        try:
-            text_analysis = json.loads(post.text_analysis) if isinstance(post.text_analysis, str) else post.text_analysis
-        except (json.JSONDecodeError, TypeError):
-            text_analysis = {}
-    
-    extracted_issues = []
-    if post.extracted_issues:
-        try:
-            extracted_issues = json.loads(post.extracted_issues) if isinstance(post.extracted_issues, str) else post.extracted_issues
-        except (json.JSONDecodeError, TypeError):
-            extracted_issues = []
-    
-    mentioned_products = []
-    if post.mentioned_products:
-        try:
-            mentioned_products = json.loads(post.mentioned_products) if isinstance(post.mentioned_products, str) else post.mentioned_products
-        except (json.JSONDecodeError, TypeError):
-            mentioned_products = []
+    # Parse JSON fields safely and quickly
+    vision_analysis = safe_json_parse(post.vision_analysis, {})
+    text_analysis = safe_json_parse(post.text_analysis, {})
+    extracted_issues = safe_json_parse(post.extracted_issues, [])
+    mentioned_products = safe_json_parse(post.mentioned_products, [])
     
     # Create response model with parsed JSON
     post_dict = {
