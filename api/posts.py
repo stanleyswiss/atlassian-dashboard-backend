@@ -42,7 +42,19 @@ def convert_db_post_to_response(post) -> PostResponse:
     extracted_issues = safe_json_parse(post.extracted_issues, [])
     mentioned_products = safe_json_parse(post.mentioned_products, [])
     
-    # Create response model with parsed JSON
+    # Map invalid enum values to valid ones
+    def map_enum_value(value, valid_values, default):
+        """Map potentially invalid enum values to valid ones"""
+        if not value or value not in valid_values:
+            return default
+        return value
+    
+    # Valid enum values (must match the enums in models/post.py)
+    valid_problem_severity = ['critical', 'high', 'medium', 'low', 'none']
+    valid_resolution_status = ['resolved', 'in_progress', 'needs_help', 'unanswered']
+    valid_business_impact = ['productivity_loss', 'data_access_blocked', 'workflow_broken', 'feature_unavailable', 'minor_inconvenience', 'none']
+    
+    # Create response model with parsed JSON and valid enum values
     post_dict = {
         "id": post.id,
         "title": post.title,
@@ -60,9 +72,9 @@ def convert_db_post_to_response(post) -> PostResponse:
         "has_screenshots": bool(post.has_screenshots) if post.has_screenshots is not None else False,
         "vision_analysis": vision_analysis,
         "text_analysis": text_analysis,
-        "problem_severity": post.problem_severity,
-        "resolution_status": post.resolution_status,
-        "business_impact": post.business_impact,
+        "problem_severity": map_enum_value(post.problem_severity, valid_problem_severity, 'none'),
+        "resolution_status": map_enum_value(post.resolution_status, valid_resolution_status, 'unanswered'),
+        "business_impact": map_enum_value(post.business_impact, valid_business_impact, 'none'),
         "business_value": post.business_value,
         "extracted_issues": extracted_issues,
         "mentioned_products": mentioned_products,
