@@ -429,6 +429,117 @@ async def analyze_posts_status():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/analyze-all-posts")
+async def analyze_all_posts_with_ai():
+    """Analyze all existing posts with Vision AI and enhanced analysis"""
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        from services.enhanced_analyzer import EnhancedAnalyzer
+        from api.settings import is_vision_analysis_enabled
+        import json
+        
+        if not is_vision_analysis_enabled():
+            return {
+                "success": False,
+                "message": "Vision AI is not enabled. Please enable it in settings and ensure OpenAI API key is configured.",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        with get_session() as db:
+            # Get all posts without analysis
+            posts_to_analyze = db.query(PostDB).filter(
+                (PostDB.vision_analysis.is_(None)) | 
+                (PostDB.enhanced_category.is_(None))
+            ).all()
+            
+            if not posts_to_analyze:
+                return {
+                    "success": True,
+                    "message": "All posts are already analyzed",
+                    "posts_analyzed": 0,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            analyzer = EnhancedAnalyzer()
+            analyzed_count = 0
+            errors = []
+            
+            for post in posts_to_analyze:
+                try:
+                    # Convert to dict for analyzer
+                    post_dict = {
+                        'id': post.id,
+                        'title': post.title,
+                        'content': post.content,
+                        'url': post.url,
+                        'category': post.category,
+                        'author': post.author
+                    }
+                    
+                    # Run comprehensive analysis
+                    analysis_result = await analyzer.analyze_post_comprehensive(post_dict)
+                    
+                    # Update post with analysis results
+                    post.enhanced_category = analysis_result.get('enhanced_category', 'uncategorized')
+                    post.vision_analysis = json.dumps(analysis_result.get('vision_analysis', {}))
+                    post.text_analysis = json.dumps(analysis_result.get('text_analysis', {}))
+                    
+                    # Extract specific fields from analysis
+                    vision_data = analysis_result.get('vision_analysis', {})
+                    text_data = analysis_result.get('text_analysis', {})
+                    business_insights = analysis_result.get('business_insights', {})
+                    
+                    post.has_screenshots = vision_data.get('has_images', 0)
+                    post.problem_severity = text_data.get('urgency_level', 'unknown')
+                    post.resolution_status = text_data.get('resolution_status', 'unknown')
+                    post.business_impact = business_insights.get('user_experience_impact', 'minimal')
+                    post.business_value = business_insights.get('business_value', 'low')
+                    
+                    # Extract issues and products
+                    post.extracted_issues = json.dumps(vision_data.get('extracted_issues', []))
+                    post.mentioned_products = json.dumps(text_data.get('mentioned_products', []))
+                    
+                    # Basic sentiment (fallback if not present)
+                    if not post.sentiment_score:
+                        sentiment = text_data.get('user_sentiment', 'neutral')
+                        if sentiment == 'frustrated':
+                            post.sentiment_score = -0.5
+                            post.sentiment_label = 'negative'
+                        elif sentiment == 'excited':
+                            post.sentiment_score = 0.5
+                            post.sentiment_label = 'positive'
+                        else:
+                            post.sentiment_score = 0.0
+                            post.sentiment_label = 'neutral'
+                    
+                    analyzed_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing post {post.id}: {e}")
+                    errors.append(f"Post {post.id}: {str(e)}")
+                    continue
+            
+            # Commit all changes
+            db.commit()
+            
+            return {
+                "success": True,
+                "message": f"Successfully analyzed {analyzed_count} posts",
+                "total_posts": len(posts_to_analyze),
+                "posts_analyzed": analyzed_count,
+                "errors": errors if errors else None,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in batch analysis: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/database-info")
 async def get_database_info():
     """Get information about the current database schema"""
