@@ -379,6 +379,41 @@ class AtlassianScraper:
                 
         logger.info(f"🔄 Deduplicated {len(posts)} -> {len(unique_posts)} posts")
         return unique_posts
+        
+    async def scrape_all_forums(self, max_posts_per_forum: int = 20, max_pages_per_forum: int = 2) -> Dict[str, any]:
+        """
+        Scrape all forums with progress tracking - alias for scrape_all_categories
+        Returns structured result for API endpoint compatibility
+        """
+        try:
+            logger.info(f"🚀 Starting scrape of all forums (max {max_posts_per_forum} posts per forum)")
+            
+            # Use the existing scrape_all_categories method
+            results = await self.scrape_all_categories(max_posts_per_forum, max_pages_per_forum)
+            
+            # Calculate totals
+            total_posts = sum(len(posts) for posts in results.values())
+            forums_scraped = [forum for forum, posts in results.items() if len(posts) > 0]
+            
+            return {
+                'success': True,
+                'total_forums': len(forums_scraped),
+                'total_posts': total_posts,
+                'forums': forums_scraped,
+                'results': results,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error in scrape_all_forums: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'total_forums': 0,
+                'total_posts': 0,
+                'forums': [],
+                'timestamp': datetime.now().isoformat()
+            }
 
 # Async helper function for easy usage
 async def scrape_atlassian_community(max_posts_per_category: int = 20, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
