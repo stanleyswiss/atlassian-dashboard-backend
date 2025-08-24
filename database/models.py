@@ -45,11 +45,11 @@ class AnalyticsDB(Base):
     total_posts = Column(Integer, nullable=False, default=0)
     total_authors = Column(Integer, nullable=False, default=0)
     
-    # Sentiment breakdown (JSON field)
-    sentiment_breakdown = Column(JSON, nullable=False, default=dict)  # {"positive": 10, "negative": 5, "neutral": 15}
+    # Sentiment breakdown (JSON stored as TEXT)
+    sentiment_breakdown = Column(Text, nullable=False, default='{}')  # {"positive": 10, "negative": 5, "neutral": 15}
     
     # Top topics and categories
-    top_topics = Column(JSON, nullable=False, default=list)  # ["bug", "feature request", "question"]
+    top_topics = Column(Text, nullable=False, default='[]')  # ["bug", "feature request", "question"]
     most_active_category = Column(String(50), nullable=False)
     
     # Calculated scores
@@ -72,7 +72,7 @@ class TrendDB(Base):
     trending_score = Column(Float, nullable=False, default=0.0)
     
     # Categories where this topic appears
-    categories = Column(JSON, nullable=False, default=list)  # ["jira", "confluence"]
+    categories = Column(Text, nullable=False, default='[]')  # ["jira", "confluence"]
     
     # Timestamps
     last_seen = Column(DateTime, nullable=False, default=func.now())
