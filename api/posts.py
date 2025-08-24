@@ -59,6 +59,69 @@ def convert_db_post_to_response(post) -> PostResponse:
     
     return PostResponse(**post_dict)
 
+@router.get("/debug/count")
+async def debug_posts_count(db: Session = Depends(get_db)):
+    """Super simple debug endpoint to test database connection"""
+    try:
+        from database.models import PostDB
+        count = db.query(PostDB).count()
+        return {
+            "success": True,
+            "total_posts": count,
+            "message": "Database connection working"
+        }
+    except Exception as e:
+        logger.error(f"Debug count error: {e}")
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@router.get("/debug/raw")
+async def debug_raw_posts(limit: int = 5, db: Session = Depends(get_db)):
+    """Debug endpoint to see raw database data"""
+    try:
+        posts = PostOperations.get_posts(db=db, limit=limit)
+        
+        # Return raw data without model validation
+        raw_posts = []
+        for post in posts:
+            raw_data = {
+                "id": post.id,
+                "title": post.title,
+                "content": post.content[:100] + "..." if len(post.content) > 100 else post.content,
+                "author": post.author,
+                "category": post.category,
+                "url": post.url,
+                "created_at": str(post.created_at),
+                "vision_analysis_type": type(post.vision_analysis).__name__,
+                "vision_analysis_value": str(post.vision_analysis)[:100] if post.vision_analysis else None,
+                "text_analysis_type": type(post.text_analysis).__name__,
+                "text_analysis_value": str(post.text_analysis)[:100] if post.text_analysis else None,
+                "enhanced_category": post.enhanced_category,
+                "has_screenshots": post.has_screenshots,
+                "problem_severity": post.problem_severity,
+            }
+            raw_posts.append(raw_data)
+        
+        return {
+            "success": True,
+            "posts_count": len(raw_posts),
+            "raw_posts": raw_posts
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug endpoint error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 @router.get("/", response_model=List[PostResponse])
 async def get_posts(
     skip: int = Query(0, ge=0, description="Number of posts to skip"),
