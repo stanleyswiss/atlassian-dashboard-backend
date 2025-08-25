@@ -111,12 +111,14 @@ class PostOperations:
 class AnalyticsOperations:
     @staticmethod
     def create_daily_analytics(db: Session, analytics_date: date, data: Dict[str, Any]) -> AnalyticsDB:
+        import json
+        
         db_analytics = AnalyticsDB(
             date=analytics_date,
             total_posts=data.get("total_posts", 0),
             total_authors=data.get("total_authors", 0),
-            sentiment_breakdown=data.get("sentiment_breakdown", {}),
-            top_topics=data.get("top_topics", []),
+            sentiment_breakdown=json.dumps(data.get("sentiment_breakdown", {})),
+            top_topics=json.dumps(data.get("top_topics", [])),
             most_active_category=data.get("most_active_category", ""),
             average_sentiment=data.get("average_sentiment", 0.0)
         )
@@ -145,13 +147,19 @@ class AnalyticsOperations:
         analytics_date: date, 
         data: Dict[str, Any]
     ) -> Optional[AnalyticsDB]:
+        import json
+        
         db_analytics = db.query(AnalyticsDB).filter(AnalyticsDB.date == analytics_date).first()
         if not db_analytics:
             return None
         
         for field, value in data.items():
             if hasattr(db_analytics, field):
-                setattr(db_analytics, field, value)
+                # Convert dict/list fields to JSON strings for PostgreSQL
+                if field in ['sentiment_breakdown', 'top_topics'] and isinstance(value, (dict, list)):
+                    setattr(db_analytics, field, json.dumps(value))
+                else:
+                    setattr(db_analytics, field, value)
         
         db.commit()
         db.refresh(db_analytics)
@@ -160,13 +168,15 @@ class AnalyticsOperations:
 class TrendOperations:
     @staticmethod
     def create_trend(db: Session, topic: str, trend_date: date, data: Dict[str, Any]) -> TrendDB:
+        import json
+        
         db_trend = TrendDB(
             topic=topic,
             date=trend_date,
             count=data.get("count", 0),
             sentiment_average=data.get("sentiment_average", 0.0),
             trending_score=data.get("trending_score", 0.0),
-            categories=data.get("categories", []),
+            categories=json.dumps(data.get("categories", [])),
             last_seen=data.get("last_seen", datetime.now())
         )
         db.add(db_trend)
@@ -198,6 +208,8 @@ class TrendOperations:
         trend_date: date, 
         data: Dict[str, Any]
     ) -> Optional[TrendDB]:
+        import json
+        
         db_trend = db.query(TrendDB).filter(
             and_(TrendDB.topic == topic, TrendDB.date == trend_date)
         ).first()
@@ -207,7 +219,11 @@ class TrendOperations:
         
         for field, value in data.items():
             if hasattr(db_trend, field):
-                setattr(db_trend, field, value)
+                # Convert list fields to JSON strings for PostgreSQL
+                if field == 'categories' and isinstance(value, list):
+                    setattr(db_trend, field, json.dumps(value))
+                else:
+                    setattr(db_trend, field, value)
         
         db.commit()
         db.refresh(db_trend)
