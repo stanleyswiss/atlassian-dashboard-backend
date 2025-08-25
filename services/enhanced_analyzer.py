@@ -59,21 +59,39 @@ class EnhancedAnalyzer:
         Perform comprehensive analysis of a post including vision AI
         """
         try:
+            logger.info(f"🔍 analyze_post_comprehensive starting for post {post.get('id', 'unknown')}")
+            
             # Get vision analysis if post has images
             async with self.vision_analyzer:
                 vision_data = await self.vision_analyzer.analyze_post_with_vision(post)
             
+            logger.info(f"  - Vision analysis completed: {type(vision_data)}, is None: {vision_data is None}")
+            
             # Enhanced text analysis with fallback
             text_analysis = await self._analyze_text_enhanced(post)
+            logger.info(f"  - Text analysis completed: {type(text_analysis)}, is None: {text_analysis is None}")
+            
             if not text_analysis:
                 logger.warning(f"Text analysis returned None for post {post.get('id')}, using fallback")
                 text_analysis = self._generate_mock_text_analysis(post)
+                logger.info(f"  - Fallback text analysis: {type(text_analysis)}")
+            
+            # Ensure we have dictionaries before passing to other methods
+            if not isinstance(text_analysis, dict):
+                logger.error(f"text_analysis is not a dict after fallback: {type(text_analysis)}")
+                text_analysis = self._generate_mock_text_analysis(post)
+            
+            if not isinstance(vision_data, dict):
+                logger.error(f"vision_data is not a dict: {type(vision_data)}")
+                vision_data = {}
             
             # Combine analyses for final categorization  
             enhanced_category = self._determine_enhanced_category(post, text_analysis, vision_data)
+            logger.info(f"  - Enhanced category determined: {enhanced_category}")
             
             # Extract business intelligence
             business_insights = self._extract_business_insights(post, text_analysis, vision_data)
+            logger.info(f"  - Business insights extracted: {type(business_insights)}")
             
             return {
                 "post_id": post.get('id'),
@@ -201,51 +219,96 @@ class EnhancedAnalyzer:
         """
         Determine enhanced category based on combined analysis
         """
-        # Ensure we have valid dictionaries (handle None cases)
-        text_analysis = text_analysis or {}
-        vision_data = vision_data or {}
-        
-        # Check thread data for solution status
-        thread_data = post.get('thread_data', {})
-        has_solution = thread_data.get('has_accepted_solution', False)
-        
-        # Priority 1: Critical issues (from vision or text)
-        if (vision_data.get('vision_analysis', {}).get('problem_severity') in ['critical', 'high'] or
-            text_analysis.get('urgency_level') == 'critical'):
-            return 'critical_issue'
-        
-        # Priority 2: Problem reports with evidence
-        if (vision_data.get('has_images') and 
-            vision_data.get('vision_analysis', {}).get('content_type') == 'error_dialog'):
-            return 'problem_with_evidence'
-        
-        # Priority 3: Solutions and fixes - now with actual solution detection!
-        if (has_solution or  # Real accepted solution from thread
-            text_analysis.get('primary_intent') == 'share_solution' or
-            text_analysis.get('resolution_status') == 'resolved' or
-            '[SOLUTION' in post.get('content', '')):  # Our solution marker
-            return 'solution_sharing'
-        
-        # Priority 4: Awesome use cases
-        if (text_analysis.get('primary_intent') == 'show_use_case' or
-            text_analysis.get('user_sentiment') == 'excited'):
-            return 'awesome_use_case'
-        
-        # Priority 5: Feature requests
-        if text_analysis.get('primary_intent') == 'request_feature':
-            return 'feature_request'
-        
-        # Priority 6: Configuration help
-        if (text_analysis.get('primary_intent') == 'seek_help' and
-            text_analysis.get('technical_complexity') in ['beginner', 'intermediate']):
-            return 'configuration_help'
-        
-        # Priority 7: Advanced technical discussions
-        if text_analysis.get('technical_complexity') in ['advanced', 'expert']:
-            return 'advanced_technical'
-        
-        # Default
-        return 'general_discussion'
+        try:
+            # Debug logging for NoneType tracking
+            logger.info(f"🔍 _determine_enhanced_category called for post {post.get('id', 'unknown')}")
+            logger.info(f"  - text_analysis type: {type(text_analysis)}, is None: {text_analysis is None}")
+            logger.info(f"  - vision_data type: {type(vision_data)}, is None: {vision_data is None}")
+            
+            # Ensure we have valid dictionaries (handle None cases)
+            if text_analysis is None:
+                logger.warning(f"  - text_analysis is None, using empty dict")
+                text_analysis = {}
+            if vision_data is None:
+                logger.warning(f"  - vision_data is None, using empty dict")
+                vision_data = {}
+            
+            # Additional type checking
+            if not isinstance(text_analysis, dict):
+                logger.error(f"  - text_analysis is not dict: {type(text_analysis)}, value: {text_analysis}")
+                text_analysis = {}
+            if not isinstance(vision_data, dict):
+                logger.error(f"  - vision_data is not dict: {type(vision_data)}, value: {vision_data}")
+                vision_data = {}
+            
+            # Check thread data for solution status
+            thread_data = post.get('thread_data', {}) or {}
+            has_solution = thread_data.get('has_accepted_solution', False) if thread_data else False
+            
+            # Priority 1: Critical issues (from vision or text) - with safe access
+            vision_analysis = vision_data.get('vision_analysis', {}) or {} if vision_data else {}
+            problem_severity = vision_analysis.get('problem_severity') if isinstance(vision_analysis, dict) else None
+            urgency_level = text_analysis.get('urgency_level') if isinstance(text_analysis, dict) else None
+            
+            logger.info(f"  - problem_severity: {problem_severity}")
+            logger.info(f"  - urgency_level: {urgency_level}")
+            
+            if (problem_severity in ['critical', 'high'] or urgency_level == 'critical'):
+                logger.info(f"  - Categorized as: critical_issue")
+                return 'critical_issue'
+            
+            # Priority 2: Problem reports with evidence
+            has_images = vision_data.get('has_images', False) if isinstance(vision_data, dict) else False
+            content_type = vision_analysis.get('content_type') if isinstance(vision_analysis, dict) else None
+            
+            if (has_images and content_type == 'error_dialog'):
+                logger.info(f"  - Categorized as: problem_with_evidence")
+                return 'problem_with_evidence'
+            
+            # Priority 3: Solutions and fixes - now with actual solution detection!
+            primary_intent = text_analysis.get('primary_intent') if isinstance(text_analysis, dict) else None
+            resolution_status = text_analysis.get('resolution_status') if isinstance(text_analysis, dict) else None
+            post_content = post.get('content', '') or ''
+            
+            if (has_solution or 
+                primary_intent == 'share_solution' or
+                resolution_status == 'resolved' or
+                '[SOLUTION' in post_content):
+                logger.info(f"  - Categorized as: solution_sharing")
+                return 'solution_sharing'
+            
+            # Priority 4: Awesome use cases
+            if (primary_intent == 'show_use_case' or 
+                text_analysis.get('user_sentiment') == 'excited'):
+                logger.info(f"  - Categorized as: awesome_use_case")
+                return 'awesome_use_case'
+            
+            # Priority 5: Feature requests
+            if primary_intent == 'request_feature':
+                logger.info(f"  - Categorized as: feature_request")
+                return 'feature_request'
+            
+            # Priority 6: Configuration help
+            technical_complexity = text_analysis.get('technical_complexity') if isinstance(text_analysis, dict) else None
+            if (primary_intent == 'seek_help' and
+                technical_complexity in ['beginner', 'intermediate']):
+                logger.info(f"  - Categorized as: configuration_help")
+                return 'configuration_help'
+            
+            # Priority 7: Advanced technical discussions
+            if technical_complexity in ['advanced', 'expert']:
+                logger.info(f"  - Categorized as: advanced_technical")
+                return 'advanced_technical'
+            
+            # Default
+            logger.info(f"  - Categorized as: general_discussion (default)")
+            return 'general_discussion'
+            
+        except Exception as e:
+            logger.error(f"Error in _determine_enhanced_category for post {post.get('id', 'unknown')}: {e}")
+            logger.error(f"  - text_analysis: {text_analysis}")
+            logger.error(f"  - vision_data: {vision_data}")
+            return 'general_discussion'
     
     def _extract_business_insights(self, post: Dict, text_analysis: Dict, vision_data: Dict) -> Dict[str, Any]:
         """
