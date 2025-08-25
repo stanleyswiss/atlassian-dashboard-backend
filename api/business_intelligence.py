@@ -127,17 +127,15 @@ async def get_awesome_discoveries(days: int = 7):
             
             if is_awesome:
                 awesome_discoveries.append({
-                    'discovery_title': post.title,
-                    'category': post.category,
-                    'description': post.excerpt or (post.title[:100] + '...' if post.title else ''),
-                    'url': post.url or '#',
-                    'date_discovered': post.created_at.isoformat() if post.created_at else None,
+                    'title': post.title,
+                    'summary': post.excerpt or (post.title[:100] + '...' if post.title else ''),
                     'author': post.author or 'Unknown',
+                    'url': post.url or '#',
+                    'products_used': [post.category] if post.category else [],
+                    'technical_level': 'medium',  # Could use enhanced analysis here
+                    'has_screenshots': bool(post.has_screenshots),
                     'engagement_potential': 'high' if post.enhanced_category == 'awesome_use_case' else 'medium',
-                    'technical_complexity': 'medium',  # Could use enhanced analysis here
-                    'use_case_type': 'workflow_optimization',
-                    'potential_reach': 'wide',
-                    'implementation_difficulty': 'medium'
+                    'discovery_type': 'workflow_optimization'
                 })
         
         return awesome_discoveries[:10]
@@ -185,16 +183,15 @@ async def get_trending_solutions(days: int = 7):
             if is_solution:
                 trending_solutions.append({
                     'solution_title': post.title,
-                    'category': post.category,
-                    'description': post.excerpt or (post.title[:100] + '...' if post.title else ''),
-                    'url': post.url or '#',
-                    'date_published': post.created_at.isoformat() if post.created_at else None,
+                    'problem_solved': post.excerpt or (post.title[:100] + '...' if post.title else ''),
+                    'solution_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
                     'author': post.author or 'Unknown',
-                    'effectiveness_score': 90 if post.resolution_status == 'resolved' else 75,
-                    'users_helped': 10 if post.enhanced_category == 'solution_sharing' else 5,
+                    'url': post.url or '#',
+                    'products_affected': [post.category] if post.category else [],
+                    'technical_level': 'beginner',  # Could use enhanced analysis
                     'has_visual_guide': bool(post.has_screenshots),
-                    'problem_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
-                    'difficulty_level': 'beginner'  # Could use enhanced analysis
+                    'effectiveness_score': 90 if post.resolution_status == 'resolved' else 75,
+                    'popularity_trend': 'rising' if post.enhanced_category == 'solution_sharing' else 'stable'
                 })
         
         return trending_solutions[:10]
@@ -246,16 +243,15 @@ async def get_unresolved_problems(days: int = 14):
                 
                 unresolved_problems.append({
                     'problem_title': post.title,
-                    'category': post.category,
-                    'description': post.excerpt or (post.title[:100] + '...' if post.title else ''),
-                    'url': post.url or '#',
-                    'date_posted': post.created_at.isoformat() if post.created_at else None,
-                    'author': post.author or 'Unknown',
+                    'urgency': post.problem_severity if post.problem_severity in ['critical', 'high', 'medium', 'low'] else 'medium',
                     'days_unresolved': days_ago,
-                    'help_requests': 1,
-                    'help_potential': 'high' if post.problem_severity in ['critical', 'high'] else 'medium',
-                    'complexity_level': 'high' if post.problem_severity in ['critical', 'high'] else 'medium',
-                    'community_interest': 'medium'
+                    'author': post.author or 'Unknown',
+                    'url': post.url or '#',
+                    'affected_products': [post.category] if post.category else [],
+                    'problem_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
+                    'has_screenshots': bool(post.has_screenshots),
+                    'business_impact': post.business_impact or 'unknown',
+                    'help_potential': 'high' if post.problem_severity in ['critical', 'high'] else 'medium'
                 })
         
         return unresolved_problems[:10]
