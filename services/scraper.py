@@ -273,8 +273,23 @@ class AtlassianScraper:
                     if messages_found:
                         logger.info(f"Found {len(messages_found)} message bodies using fallback selector")
             
-            # Check for accepted solution
-            has_accepted_solution = bool(soup.select_one('.lia-component-solution-info, .accepted-solution-highlight, .solution-message'))
+            # Check for accepted solution with updated selectors
+            solution_selectors = [
+                '.accepted-solution',  # Primary accepted solution class
+                '.lia-message-view-solution-status-accepted',  # Solution status accepted
+                '.lia-component-solution-info',  # Solution info component
+                '.accepted-solution-highlight',  # Highlighted solution
+                '.solution-message',  # Solution message
+                'img[src*="green-checkmark"]',  # Green checkmark image
+                '.lia-solution-accepted'  # Alternative solution accepted class
+            ]
+            
+            has_accepted_solution = False
+            for selector in solution_selectors:
+                if soup.select_one(selector):
+                    has_accepted_solution = True
+                    logger.info(f"✅ Found accepted solution using selector: {selector}")
+                    break
             
             # Process each message
             for idx, msg in enumerate(messages_found[:10]):  # Limit to first 10 messages
@@ -304,7 +319,12 @@ class AtlassianScraper:
                         logger.info(f"🖼️ Found images in message {idx}: {len(re.findall(r'<img[^>]+>', msg_html.lower()))} img tags")
                     
                 # Check if this is an accepted solution
-                is_solution = bool(msg.select_one('.lia-component-solution-info, .accepted-solution'))
+                is_solution = bool(msg.select_one('.accepted-solution, .lia-message-view-solution-status-accepted, .lia-component-solution-info'))
+                
+                # Also check for text indicators if not found by class
+                if not is_solution:
+                    msg_text = msg.get_text(strip=True).lower()
+                    is_solution = 'answer accepted' in msg_text or 'accepted answer' in msg_text
                 
                 # Get author info with comprehensive selectors
                 author_selectors = ['a[href*="/forums/user/viewprofilepage/user-id/"]', '.lia-user-name-link', '.lia-user-name', '.user-name', '.username', '.author-name', '.post-author']
