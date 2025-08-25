@@ -65,6 +65,16 @@ async def get_forums_overview(days: int = 7):
                 PostDB.created_at >= start_date
             ).all()
             
+            # Debug: Log what categories we actually have in database
+            all_categories = {}
+            for post in posts:
+                cat = post.category or 'none'
+                all_categories[cat] = all_categories.get(cat, 0) + 1
+            
+            logger.info(f"🔍 Forums API Debug - Database categories found: {all_categories}")
+            logger.info(f"🔍 Forums API Debug - Total posts retrieved: {len(posts)}")
+            logger.info(f"🔍 Forums API Debug - Forum configs looking for: {list(FORUM_CONFIGS.keys())}")
+            
             # Group by forum/category
             forum_stats = {}
             
