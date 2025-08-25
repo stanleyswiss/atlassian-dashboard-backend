@@ -805,3 +805,48 @@ async def get_database_info():
     except Exception as e:
         logger.error(f"Error getting database info: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get database info: {str(e)}")
+
+@router.post("/fix-empty-authors")
+async def fix_empty_authors():
+    """Fix posts with empty or null author fields by setting them to 'Anonymous'"""
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        
+        logger.info("🔄 Starting fix for posts with empty authors")
+        
+        updated_count = 0
+        with get_session() as db:
+            # Find posts with empty or null authors
+            posts_with_empty_authors = db.query(PostDB).filter(
+                (PostDB.author.is_(None)) | 
+                (PostDB.author == '') |
+                (PostDB.author == ' ')
+            ).all()
+            
+            logger.info(f"📊 Found {len(posts_with_empty_authors)} posts with empty/null authors")
+            
+            for post in posts_with_empty_authors:
+                old_author = post.author
+                post.author = "Anonymous"
+                post.updated_at = datetime.now()
+                updated_count += 1
+                logger.debug(f"Updated post {post.id}: '{old_author}' -> 'Anonymous'")
+            
+            db.commit()
+            logger.info(f"✅ Fixed {updated_count} posts with empty authors")
+        
+        return {
+            "success": True,
+            "message": f"Fixed {updated_count} posts with empty authors",
+            "updated_count": updated_count,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to fix empty authors: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }

@@ -60,7 +60,7 @@ def convert_db_post_to_response(post) -> PostResponse:
         "id": post.id,
         "title": post.title,
         "content": post.content,
-        "author": post.author,
+        "author": post.author if post.author and post.author.strip() else "Anonymous",
         "category": post.category,
         "url": post.url,
         "excerpt": post.excerpt,
