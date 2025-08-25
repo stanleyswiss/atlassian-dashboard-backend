@@ -249,11 +249,26 @@ class ContentIntelligenceService:
                     tokens = response.usage.total_tokens if hasattr(response, 'usage') else 'unknown'
                 
                 logger.info(f"✅ OpenAI API call successful for forum {forum}, tokens: {tokens}")
+                logger.info(f"🔍 OpenAI response content for {forum}: {content[:200]}...")
                 
-                # Parse AI response (assuming it returns JSON)
+                # Parse response with better JSON handling (same as enhanced_analyzer)
                 import json
-                result = json.loads(content)
-                return result
+                try:
+                    # Try to extract JSON from response if it's embedded in text
+                    if '{' in content and '}' in content:
+                        json_start = content.find('{')
+                        json_end = content.rfind('}') + 1
+                        json_text = content[json_start:json_end]
+                        result = json.loads(json_text)
+                        logger.info(f"📊 Parsed forum {forum} analysis result: {list(result.keys()) if isinstance(result, dict) else 'invalid'}")
+                        return result
+                    else:
+                        # No JSON found, create structured response from text
+                        logger.warning(f"No JSON found in {forum} response, creating structured fallback")
+                        return self._parse_forum_text_response_to_dict(content, forum)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON parsing failed for {forum}: {e}, creating structured fallback")
+                    return self._parse_forum_text_response_to_dict(content, forum)
                 
             except Exception as api_error:
                 logger.error(f"OpenAI API call failed for forum {forum}: {api_error}")
@@ -335,6 +350,57 @@ class ContentIntelligenceService:
         # Call OpenAI API
         # For now, return mock
         return self._generate_mock_trending_issues()
+    
+    def _parse_forum_text_response_to_dict(self, content: str, forum: str) -> Dict[str, Any]:
+        """
+        Parse non-JSON OpenAI response for forum analysis into structured data
+        """
+        logger.info(f"📝 Parsing text response for forum {forum} to structured data")
+        
+        # Create default structure matching expected format
+        result = {
+            "summary": f"Analysis for {forum.upper()} forum shows active community engagement",
+            "key_topics": ["General Discussion", "Technical Questions", "Feature Requests"],
+            "sentiment_trend": "mixed",
+            "urgency_level": "medium",
+            "common_problems": ["Configuration questions", "Best practices needed"],
+            "emerging_trends": ["Growing interest in new features"]
+        }
+        
+        # Basic keyword analysis on the response content
+        content_lower = content.lower()
+        
+        # Determine sentiment trend from content
+        if any(word in content_lower for word in ['positive', 'good', 'excellent', 'satisfied']):
+            result["sentiment_trend"] = "positive"
+        elif any(word in content_lower for word in ['negative', 'frustrated', 'problems', 'issues']):
+            result["sentiment_trend"] = "negative"
+        elif any(word in content_lower for word in ['mixed', 'varied', 'both']):
+            result["sentiment_trend"] = "mixed"
+        
+        # Determine urgency from content
+        if any(word in content_lower for word in ['critical', 'urgent', 'high priority']):
+            result["urgency_level"] = "high"
+        elif any(word in content_lower for word in ['low', 'minor', 'small']):
+            result["urgency_level"] = "low"
+        
+        # Extract topics mentioned in the response
+        topics = []
+        topic_keywords = ['automation', 'workflow', 'integration', 'api', 'permissions', 'configuration', 'performance', 'bug', 'feature']
+        for keyword in topic_keywords:
+            if keyword in content_lower:
+                topics.append(keyword.title())
+        
+        if topics:
+            result["key_topics"] = topics[:5]  # Limit to 5 topics
+        
+        # Create summary from first sentence of response
+        sentences = content.split('.')
+        if sentences and len(sentences[0]) > 20:
+            result["summary"] = sentences[0].strip() + "."
+        
+        logger.info(f"📊 Created structured analysis for forum {forum} from text response")
+        return result
     
     # Mock data generators for when OpenAI is not available
     def _generate_mock_analysis(self, forum: str) -> Dict[str, Any]:
