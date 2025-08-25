@@ -9,7 +9,13 @@ from urllib.parse import urljoin, urlparse
 import logging
 from config import settings
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Ensure console output for Railway
+    ]
+)
 logger = logging.getLogger(__name__)
 
 class AtlassianScraper:
@@ -156,45 +162,52 @@ class AtlassianScraper:
         """Find the URL for the next page in pagination"""
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Common pagination selectors for Atlassian Community
-        next_page_selectors = [
-            'a[aria-label="Next page"]',
-            'a[title="Next page"]', 
-            '.lia-paging-next-page',
-            '.paging-next a',
-            'a.lia-link-navigation[href*="page"]',
-            '.next a',
-            'a:contains("Next")',
-            'a[href*="/page/"]'
-        ]
-        
-        for selector in next_page_selectors:
-            next_link = soup.select_one(selector)
-            if next_link and next_link.get('href'):
-                next_url = urljoin(current_url, next_link.get('href'))
-                logger.info(f"🔗 Found next page: {next_url}")
+        # First, look for "Next»" link (most reliable for Atlassian Community)
+        all_links = soup.find_all('a', href=True)
+        for link in all_links:
+            link_text = link.get_text(strip=True).lower()
+            if link_text in ['next»', 'next', '»', 'next page']:
+                next_url = urljoin(current_url, link.get('href'))
+                logger.info(f"🔗 Found next page via text '{link_text}': {next_url}")
                 return next_url
-                
-        # Try to find pagination with page numbers
-        page_links = soup.select('a[href*="page"]')
-        current_page_num = 1
         
-        # Extract current page number from URL or find indicators
+        # Extract current page number from URL
+        current_page_num = 1
         if '/page/' in current_url:
             try:
                 current_page_num = int(re.search(r'/page/(\d+)', current_url).group(1))
             except:
                 pass
         
-        # Look for next sequential page
+        # Look for next sequential page number
         next_page_num = current_page_num + 1
-        for link in page_links:
+        
+        # Try specific pagination selectors for Atlassian Community
+        pagination_patterns = [
+            f'a[href*="/page/{next_page_num}"]',  # Direct page number match
+            f'a[aria-label="Page {next_page_num}"]',  # Aria label match
+            'a.lia-link-navigation[href*="/page/"]',  # Lithium navigation links
+        ]
+        
+        for pattern in pagination_patterns:
+            page_link = soup.select_one(pattern)
+            if page_link and page_link.get('href'):
+                href = page_link.get('href')
+                # Validate it's actually the next page
+                if f'/page/{next_page_num}' in href:
+                    next_url = urljoin(current_url, href)
+                    logger.info(f"🔗 Found next page by pattern '{pattern}': {next_url}")
+                    return next_url
+        
+        # Fallback: look for any link with next page number
+        for link in all_links:
             href = link.get('href', '')
-            if f'/page/{next_page_num}' in href or f'page={next_page_num}' in href:
+            if f'/page/{next_page_num}' in href and 'jira-questions' in href:
                 next_url = urljoin(current_url, href)
-                logger.info(f"🔗 Found next page by number: {next_url}")
+                logger.info(f"🔗 Found next page by number search: {next_url}")
                 return next_url
-                
+        
+        logger.info(f"❌ No next page found for {current_url} (looking for page {next_page_num})")
         return None
         
     async def scrape_post_content(self, post_url: str) -> Optional[Dict]:
