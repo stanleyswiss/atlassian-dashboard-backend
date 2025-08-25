@@ -97,11 +97,23 @@ class EnhancedAnalyzer:
             title = post.get('title', '')
             content = post.get('content', '')
             
+            # Include thread data if available
+            thread_data = post.get('thread_data', {})
+            has_solution = thread_data.get('has_accepted_solution', False)
+            total_replies = thread_data.get('total_replies', 0)
+            
+            # Add solution context if present
+            if has_solution and '[SOLUTION' in content:
+                content_context = f"{content[:800]}\n\nNOTE: This thread has an accepted solution marked by the community."
+            else:
+                content_context = content[:1000]
+            
             prompt = f"""
             Analyze this Atlassian Community forum post and categorize it:
 
             Title: {title}
-            Content: {content[:1000]}
+            Content: {content_context}
+            Thread Info: {total_replies} replies, Solution: {'Yes' if has_solution else 'No'}
 
             Return JSON with:
             1. "primary_intent": What is the user trying to achieve? (report_problem, seek_help, share_solution, request_feature, show_use_case, ask_question, share_news)
@@ -186,6 +198,10 @@ class EnhancedAnalyzer:
         """
         Determine enhanced category based on combined analysis
         """
+        # Check thread data for solution status
+        thread_data = post.get('thread_data', {})
+        has_solution = thread_data.get('has_accepted_solution', False)
+        
         # Priority 1: Critical issues (from vision or text)
         if (vision_data.get('vision_analysis', {}).get('problem_severity') in ['critical', 'high'] or
             text_analysis.get('urgency_level') == 'critical'):
@@ -196,9 +212,11 @@ class EnhancedAnalyzer:
             vision_data.get('vision_analysis', {}).get('content_type') == 'error_dialog'):
             return 'problem_with_evidence'
         
-        # Priority 3: Solutions and fixes
-        if (text_analysis.get('primary_intent') == 'share_solution' or
-            text_analysis.get('resolution_status') == 'resolved'):
+        # Priority 3: Solutions and fixes - now with actual solution detection!
+        if (has_solution or  # Real accepted solution from thread
+            text_analysis.get('primary_intent') == 'share_solution' or
+            text_analysis.get('resolution_status') == 'resolved' or
+            '[SOLUTION' in post.get('content', '')):  # Our solution marker
             return 'solution_sharing'
         
         # Priority 4: Awesome use cases
