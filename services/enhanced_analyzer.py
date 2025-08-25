@@ -314,53 +314,95 @@ class EnhancedAnalyzer:
         """
         Extract actionable business insights from the analysis
         """
-        # Ensure we have valid dictionaries (handle None cases)
-        text_analysis = text_analysis or {}
-        vision_data = vision_data or {}
-        
-        insights = {
-            "business_value": "low",
-            "atlassian_team_attention": False,
-            "product_improvement_opportunity": False,
-            "user_experience_impact": "minimal",
-            "documentation_gap": False,
-            "training_opportunity": False
-        }
-        
-        # High business value indicators
-        high_value_indicators = [
-            text_analysis.get('urgency_level') in ['critical', 'high'],
-            vision_data.get('vision_analysis', {}).get('business_impact') in ['productivity_loss', 'data_access_blocked'],
-            text_analysis.get('primary_intent') == 'report_problem',
-            len(text_analysis.get('mentioned_products', [])) > 1  # Cross-product issues
-        ]
-        
-        if any(high_value_indicators):
-            insights["business_value"] = "high"
-            insights["atlassian_team_attention"] = True
-        
-        # Product improvement opportunities
-        if (text_analysis.get('primary_intent') == 'request_feature' or
-            text_analysis.get('user_sentiment') == 'frustrated'):
-            insights["product_improvement_opportunity"] = True
-        
-        # User experience impact
-        if vision_data.get('vision_analysis', {}).get('business_impact') in ['workflow_broken', 'productivity_loss']:
-            insights["user_experience_impact"] = "high"
-        elif text_analysis.get('user_sentiment') == 'frustrated':
-            insights["user_experience_impact"] = "medium"
-        
-        # Documentation gaps
-        if (text_analysis.get('primary_intent') == 'seek_help' and
-            text_analysis.get('technical_complexity') == 'beginner'):
-            insights["documentation_gap"] = True
-        
-        # Training opportunities
-        if (text_analysis.get('technical_complexity') in ['advanced', 'expert'] and
-            text_analysis.get('primary_intent') == 'share_solution'):
-            insights["training_opportunity"] = True
-        
-        return insights
+        try:
+            logger.info(f"🔍 _extract_business_insights called for post {post.get('id', 'unknown')}")
+            logger.info(f"  - text_analysis type: {type(text_analysis)}, is None: {text_analysis is None}")
+            logger.info(f"  - vision_data type: {type(vision_data)}, is None: {vision_data is None}")
+            
+            # Ensure we have valid dictionaries (handle None cases)
+            if text_analysis is None:
+                logger.warning(f"  - text_analysis is None, using empty dict")
+                text_analysis = {}
+            if vision_data is None:
+                logger.warning(f"  - vision_data is None, using empty dict")
+                vision_data = {}
+                
+            # Additional type checking
+            if not isinstance(text_analysis, dict):
+                logger.error(f"  - text_analysis is not dict: {type(text_analysis)}")
+                text_analysis = {}
+            if not isinstance(vision_data, dict):
+                logger.error(f"  - vision_data is not dict: {type(vision_data)}")
+                vision_data = {}
+            
+            insights = {
+                "business_value": "low",
+                "atlassian_team_attention": False,
+                "product_improvement_opportunity": False,
+                "user_experience_impact": "minimal",
+                "documentation_gap": False,
+                "training_opportunity": False
+            }
+            
+            # Safe extraction with None checks
+            urgency_level = text_analysis.get('urgency_level') if isinstance(text_analysis, dict) else None
+            primary_intent = text_analysis.get('primary_intent') if isinstance(text_analysis, dict) else None
+            user_sentiment = text_analysis.get('user_sentiment') if isinstance(text_analysis, dict) else None
+            technical_complexity = text_analysis.get('technical_complexity') if isinstance(text_analysis, dict) else None
+            mentioned_products = text_analysis.get('mentioned_products', []) if isinstance(text_analysis, dict) else []
+            
+            # Safe vision data extraction
+            vision_analysis = vision_data.get('vision_analysis', {}) or {} if isinstance(vision_data, dict) else {}
+            business_impact = vision_analysis.get('business_impact') if isinstance(vision_analysis, dict) else None
+            
+            logger.info(f"  - Extracted values: urgency={urgency_level}, intent={primary_intent}, sentiment={user_sentiment}")
+            
+            # High business value indicators
+            high_value_indicators = [
+                urgency_level in ['critical', 'high'],
+                business_impact in ['productivity_loss', 'data_access_blocked'],
+                primary_intent == 'report_problem',
+                len(mentioned_products) > 1  # Cross-product issues
+            ]
+            
+            if any(high_value_indicators):
+                insights["business_value"] = "high"
+                insights["atlassian_team_attention"] = True
+            
+            # Product improvement opportunities
+            if (primary_intent == 'request_feature' or user_sentiment == 'frustrated'):
+                insights["product_improvement_opportunity"] = True
+            
+            # User experience impact
+            if business_impact in ['workflow_broken', 'productivity_loss']:
+                insights["user_experience_impact"] = "high"
+            elif user_sentiment == 'frustrated':
+                insights["user_experience_impact"] = "medium"
+            
+            # Documentation gaps
+            if (primary_intent == 'seek_help' and technical_complexity == 'beginner'):
+                insights["documentation_gap"] = True
+            
+            # Training opportunities
+            if (technical_complexity in ['advanced', 'expert'] and primary_intent == 'share_solution'):
+                insights["training_opportunity"] = True
+            
+            logger.info(f"  - Business insights extracted successfully: {insights['business_value']} value")
+            return insights
+            
+        except Exception as e:
+            logger.error(f"Error in _extract_business_insights for post {post.get('id', 'unknown')}: {e}")
+            logger.error(f"  - text_analysis: {text_analysis}")
+            logger.error(f"  - vision_data: {vision_data}")
+            return {
+                "business_value": "low",
+                "atlassian_team_attention": False,
+                "product_improvement_opportunity": False,
+                "user_experience_impact": "minimal",
+                "documentation_gap": False,
+                "training_opportunity": False,
+                "error": str(e)
+            }
     
     def _parse_text_response_to_dict(self, content: str, post: Dict) -> Dict[str, Any]:
         """

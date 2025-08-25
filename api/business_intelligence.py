@@ -261,7 +261,7 @@ async def get_executive_summary(days: int = 7):
         categories = {}
         
         for post in recent_posts:
-            cat = post.get('category', 'unknown')
+            cat = post.category if hasattr(post, 'category') else 'unknown'
             categories[cat] = categories.get(cat, 0) + 1
         
         return {
