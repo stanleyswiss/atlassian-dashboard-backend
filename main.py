@@ -11,6 +11,7 @@ from api.business_intelligence import router as bi_router
 from api.admin import router as admin_router
 from api.roadmap import router as roadmap_router
 from api.forums import router as forums_router
+from api.diagnostic import router as diagnostic_router
 
 # Create database tables on startup
 create_tables()
@@ -42,6 +43,7 @@ app.include_router(bi_router)
 app.include_router(admin_router)
 app.include_router(roadmap_router)
 app.include_router(forums_router)
+app.include_router(diagnostic_router)
 
 @app.get("/health")
 async def health_check():
