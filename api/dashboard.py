@@ -216,7 +216,7 @@ async def get_trending_topics(
             logger.info("No trending topics in database, generating from recent post titles")
             
             # Get recent posts and extract trending words
-            recent_posts = post_ops.get_recent_posts(db, days=7, limit=50)
+            recent_posts = PostOperations.get_recent_posts(db, days=7, limit=50)
             if recent_posts:
                 # Extract common words from titles
                 all_words = []
