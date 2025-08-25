@@ -238,8 +238,15 @@ async def get_posts(
         
         logger.info(f"Retrieved {len(posts)} posts from database")
         
-        # Convert posts with timing
-        response_posts = [convert_db_post_to_response(post) for post in posts]
+        # Convert posts with timing and error handling
+        response_posts = []
+        for i, post in enumerate(posts):
+            try:
+                response_posts.append(convert_db_post_to_response(post))
+            except Exception as conv_error:
+                logger.error(f"Error converting post {i} (id: {getattr(post, 'id', 'unknown')}): {conv_error}")
+                # Skip this post and continue
+                continue
         
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -344,6 +351,51 @@ async def delete_post(post_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error deleting post {post_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete post")
+
+@router.get("/debug/resolution-status")
+async def debug_resolution_status(db: Session = Depends(get_db)):
+    """Debug endpoint to check resolution status distribution"""
+    try:
+        from database.models import PostDB
+        from sqlalchemy import func
+        
+        # Get resolution status distribution
+        resolution_stats = db.query(
+            PostDB.resolution_status, 
+            func.count(PostDB.id).label('count')
+        ).group_by(PostDB.resolution_status).all()
+        
+        # Get has_accepted_solution distribution
+        solution_stats = db.query(
+            PostDB.has_accepted_solution,
+            func.count(PostDB.id).label('count')
+        ).group_by(PostDB.has_accepted_solution).all()
+        
+        # Get some sample posts with solutions
+        sample_solved = db.query(PostDB).filter(
+            (PostDB.resolution_status == 'resolved') | 
+            (PostDB.has_accepted_solution == True)
+        ).limit(5).all()
+        
+        return {
+            "resolution_status_distribution": {str(stat[0]): stat[1] for stat in resolution_stats},
+            "has_accepted_solution_distribution": {str(stat[0]): stat[1] for stat in solution_stats},
+            "sample_solved_posts": [
+                {
+                    "id": post.id,
+                    "title": post.title[:50] if post.title else "No title",
+                    "resolution_status": post.resolution_status,
+                    "has_accepted_solution": post.has_accepted_solution,
+                    "category": post.category,
+                    "url": post.url
+                } for post in sample_solved
+            ],
+            "total_posts": db.query(func.count(PostDB.id)).scalar()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        return {"error": str(e)}
 
 @router.get("/search/by-content")
 async def search_posts_by_content(
