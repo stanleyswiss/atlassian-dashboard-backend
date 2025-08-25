@@ -211,77 +211,44 @@ async def get_trending_topics(
             )
             topic_trends.append(topic_trend)
         
-        # If no trends found, return mock data
+        # If no trends found, generate from recent posts
         if not topic_trends:
-            logger.info("No trending topics found in database, returning mock data")
-            mock_trends = [
-                TopicTrend(
-                    topic="workflow automation",
-                    count=25,
-                    sentiment_average=0.3,
-                    trending_score=0.85,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="user permissions",
-                    count=18,
-                    sentiment_average=-0.2,
-                    trending_score=0.72,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="API integration", 
-                    count=15,
-                    sentiment_average=0.1,
-                    trending_score=0.68,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="performance issues",
-                    count=22,
-                    sentiment_average=-0.4,
-                    trending_score=0.65,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="JSM automation",
-                    count=12,
-                    sentiment_average=0.2,
-                    trending_score=0.58,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="confluence templates",
-                    count=8,
-                    sentiment_average=0.5,
-                    trending_score=0.45,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="database connection",
-                    count=14,
-                    sentiment_average=-0.3,
-                    trending_score=0.42,
-                    last_seen=datetime.now()
-                ),
-                TopicTrend(
-                    topic="Jira migration",
-                    count=7,
-                    sentiment_average=0.1,
-                    trending_score=0.38,
-                    last_seen=datetime.now()
-                )
-            ]
+            logger.info("No trending topics in database, generating from recent post titles")
             
-            # Apply filters
-            filtered_trends = [
-                trend for trend in mock_trends
-                if trend.trending_score >= min_score
-            ]
-            
-            return filtered_trends[:limit]
-            
-        return topic_trends
+            # Get recent posts and extract trending words
+            recent_posts = post_ops.get_recent_posts(db, days=7, limit=50)
+            if recent_posts:
+                # Extract common words from titles
+                all_words = []
+                for post in recent_posts:
+                    title_words = post.title.lower().split() if post.title else []
+                    # Filter out common words and keep meaningful ones
+                    meaningful_words = [word for word in title_words 
+                                     if len(word) > 4 and word not in ['with', 'from', 'this', 'that', 'when', 'where', 'what', 'have']]
+                    all_words.extend(meaningful_words)
+                
+                # Count word frequency
+                from collections import Counter
+                word_counts = Counter(all_words)
+                
+                # Create trending topics from most common words
+                for word, count in word_counts.most_common(min(limit, 8)):
+                    if count > 1:  # Only include words that appear more than once
+                        topic_trends.append(TopicTrend(
+                            topic=word,
+                            count=count,
+                            sentiment_average=0.0,  # Neutral sentiment
+                            trending_score=min(count / 10, 1.0),  # Scale to 0-1
+                            last_seen=datetime.now()
+                        ))
+        
+        # Apply filters to all trends (both database and generated)
+        filtered_trends = [
+            trend for trend in topic_trends
+            if trend.trending_score >= min_score
+        ]
+        
+        return filtered_trends[:limit]
         
     except Exception as e:
         logger.error(f"Error getting trending topics: {e}")

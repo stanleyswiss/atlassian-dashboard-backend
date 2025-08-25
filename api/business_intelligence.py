@@ -39,10 +39,19 @@ async def get_critical_issues(days: int = 7):
                 (post.business_impact in ['productivity_loss', 'workflow_broken', 'data_access_blocked'])
             )
             
-            # Fallback to keyword matching if no enhanced analysis
-            if not is_critical and not post.enhanced_category:
+            # More aggressive fallback matching for critical issues
+            if not is_critical:
                 title_lower = post.title.lower() if post.title else ''
-                is_critical = any(keyword in title_lower for keyword in ['error', 'bug', 'broken', 'failed', 'critical', 'urgent', 'help needed'])
+                content_lower = (post.content or '').lower()[:200]  # First 200 chars
+                
+                # Check for critical keywords in title or content
+                critical_keywords = ['error', 'bug', 'broken', 'failed', 'critical', 'urgent', 'help needed', 
+                                   'not working', 'stopped working', 'can\'t', 'cannot', 'issue', 'problem']
+                is_critical = any(keyword in title_lower or keyword in content_lower for keyword in critical_keywords)
+                
+                # Debug logging
+                if is_critical:
+                    logger.info(f"🔍 Critical issue found via keywords: {post.title[:50]}...")
             
             if is_critical:
                 # Determine severity from enhanced analysis
@@ -97,10 +106,18 @@ async def get_awesome_discoveries(days: int = 7):
                 (hasattr(post, 'has_accepted_solution') and post.has_accepted_solution)
             )
             
-            # Fallback to keyword matching if no enhanced analysis
-            if not is_awesome and not post.enhanced_category:
+            # More aggressive fallback matching for awesome discoveries  
+            if not is_awesome:
                 title_lower = post.title.lower() if post.title else ''
-                is_awesome = any(keyword in title_lower for keyword in ['success', 'solution', 'solved', 'working', 'tutorial', 'guide', 'how to', 'share', 'example'])
+                content_lower = (post.content or '').lower()[:200]
+                
+                awesome_keywords = ['success', 'solution', 'solved', 'working', 'tutorial', 'guide', 'how to', 
+                                  'share', 'example', 'fixed', 'resolved', 'workaround', 'setup', 'configure']
+                is_awesome = any(keyword in title_lower or keyword in content_lower for keyword in awesome_keywords)
+                
+                # Debug logging
+                if is_awesome:
+                    logger.info(f"🔍 Awesome discovery found via keywords: {post.title[:50]}...")
             
             if is_awesome:
                 awesome_discoveries.append({
@@ -146,10 +163,18 @@ async def get_trending_solutions(days: int = 7):
                 (hasattr(post, 'has_accepted_solution') and post.has_accepted_solution)
             )
             
-            # Fallback to keyword matching
-            if not is_solution and not post.enhanced_category:
+            # More aggressive fallback matching for solutions
+            if not is_solution:
                 title_lower = post.title.lower() if post.title else ''
-                is_solution = any(keyword in title_lower for keyword in ['fix', 'solution', 'resolved', 'workaround', 'answer', 'setup', 'configure'])
+                content_lower = (post.content or '').lower()[:200]
+                
+                solution_keywords = ['fix', 'solution', 'resolved', 'workaround', 'answer', 'setup', 'configure',
+                                   'solved', 'working', 'steps', 'guide', 'tutorial', 'fixed']
+                is_solution = any(keyword in title_lower or keyword in content_lower for keyword in solution_keywords)
+                
+                # Debug logging
+                if is_solution:
+                    logger.info(f"🔍 Trending solution found via keywords: {post.title[:50]}...")
                 
             if is_solution:
                 trending_solutions.append({
@@ -194,10 +219,18 @@ async def get_unresolved_problems(days: int = 14):
                 (post.enhanced_category in ['problem_report', 'critical_issue'] and post.resolution_status != 'resolved')
             )
             
-            # Fallback to keyword matching
-            if not is_unresolved and not post.enhanced_category:
+            # More aggressive fallback matching for unresolved problems
+            if not is_unresolved:
                 title_lower = post.title.lower() if post.title else ''
-                is_unresolved = any(keyword in title_lower for keyword in ['help', 'stuck', 'problem', 'not working', 'issue', 'question', 'how'])
+                content_lower = (post.content or '').lower()[:200]
+                
+                problem_keywords = ['help', 'stuck', 'problem', 'not working', 'issue', 'question', 'how', 
+                                  'can\'t', 'cannot', 'error', 'broken', 'failed', 'trouble', 'difficulty']
+                is_unresolved = any(keyword in title_lower or keyword in content_lower for keyword in problem_keywords)
+                
+                # Debug logging  
+                if is_unresolved:
+                    logger.info(f"🔍 Unresolved problem found via keywords: {post.title[:50]}...")
                 
             if is_unresolved:
                 # Calculate days since post

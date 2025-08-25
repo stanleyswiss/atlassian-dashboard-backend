@@ -70,7 +70,15 @@ async def get_forums_overview(days: int = 7):
             
             for forum_key, forum_config in FORUM_CONFIGS.items():
                 # Get posts for this forum
-                forum_posts = [p for p in posts if p.category == forum_key]
+                forum_posts = [p for p in posts if p.category and p.category.lower() == forum_key.lower()]
+                
+                # Debug: Log category distribution if no posts found
+                if len(forum_posts) == 0 and forum_key in ['jira', 'jsm', 'confluence']:
+                    logger.info(f"🔍 No posts for forum '{forum_key}' - checking first 10 post categories:")
+                    sample_categories = [p.category for p in posts[:10] if p.category]
+                    logger.info(f"   Sample categories: {sample_categories}")
+                    unique_categories = set(p.category for p in posts if p.category)
+                    logger.info(f"   All unique categories: {list(unique_categories)}")
                 
                 # Calculate statistics
                 total_posts = len(forum_posts)
@@ -238,7 +246,15 @@ async def get_forum_health_comparison(days: int = 7):
             health_comparison = {}
             
             for forum_key, forum_config in FORUM_CONFIGS.items():
-                forum_posts = [p for p in posts if p.category == forum_key]
+                forum_posts = [p for p in posts if p.category and p.category.lower() == forum_key.lower()]
+                
+                # Debug: Log category distribution if no posts found
+                if len(forum_posts) == 0 and forum_key in ['jira', 'jsm', 'confluence']:
+                    logger.info(f"🔍 No posts for forum '{forum_key}' - checking first 10 post categories:")
+                    sample_categories = [p.category for p in posts[:10] if p.category]
+                    logger.info(f"   Sample categories: {sample_categories}")
+                    unique_categories = set(p.category for p in posts if p.category)
+                    logger.info(f"   All unique categories: {list(unique_categories)}")
                 
                 if not forum_posts:
                     health_comparison[forum_key] = {
