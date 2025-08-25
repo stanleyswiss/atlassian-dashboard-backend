@@ -605,7 +605,7 @@ async def analyze_next_batch(batch_size: int = 3):
     return await analyze_all_posts_with_ai(batch_size)
 
 @router.post("/force-reanalyze-posts")
-async def force_reanalyze_all_posts(batch_size: int = 5):
+async def force_reanalyze_all_posts(batch_size: int = 25):
     """Force re-analysis of all posts with real OpenAI API (replaces mock data)"""
     return await analyze_all_posts_with_ai(batch_size, force_reanalyze=True)
 
