@@ -658,6 +658,38 @@ async def update_resolution_status_for_existing_posts():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/migrate-database")
+async def migrate_database_schema():
+    """Run database migration to add missing columns"""
+    try:
+        from database.migrate import migrate_database
+        import logging
+        
+        logger.info("🔄 Starting database migration")
+        
+        success = migrate_database()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Database migration completed successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Database migration failed - check logs",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/test-openai-call")
 async def test_single_openai_call():
     """Test a single OpenAI API call to verify it works"""
