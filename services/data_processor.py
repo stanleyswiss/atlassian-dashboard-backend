@@ -109,7 +109,12 @@ class DataProcessor:
         if len(excerpt) > 497:
             excerpt = excerpt[:497] + "..."
         
-        return PostCreate(
+        # Extract thread data info
+        thread_data = post_data.get('thread_data', {})
+        has_accepted_solution = thread_data.get('has_accepted_solution', False) if thread_data else False
+        total_replies = thread_data.get('total_replies', 0) if thread_data else 0
+        
+        post_create = PostCreate(
             title=post_data.get('title', 'No title'),
             content=post_data.get('content', 'No content'),
             html_content=post_data.get('html_content'),  # Include HTML content
@@ -120,6 +125,13 @@ class DataProcessor:
             sentiment_score=post_data.get('sentiment_score'),
             sentiment_label=SentimentLabel(post_data.get('sentiment_label')) if post_data.get('sentiment_label') else None
         )
+        
+        # Add thread data attributes
+        post_create.thread_data = thread_data
+        post_create.has_accepted_solution = has_accepted_solution
+        post_create.total_replies = total_replies
+        
+        return post_create
         
     async def _generate_daily_analytics(self, target_date: date, analyzed_data: Optional[Dict] = None) -> Optional[AnalyticsDB]:
         """Generate daily analytics summary"""

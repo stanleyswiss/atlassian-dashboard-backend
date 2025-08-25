@@ -9,6 +9,12 @@ from models import Post, PostCreate, PostUpdate
 class PostOperations:
     @staticmethod
     def create_post(db: Session, post: PostCreate) -> PostDB:
+        # Handle thread_data serialization
+        import json
+        thread_data_json = None
+        if hasattr(post, 'thread_data') and post.thread_data:
+            thread_data_json = json.dumps(post.thread_data)
+        
         db_post = PostDB(
             title=post.title,
             content=post.content,
@@ -19,7 +25,10 @@ class PostOperations:
             excerpt=post.excerpt,
             date=datetime.now(),
             sentiment_score=post.sentiment_score,
-            sentiment_label=post.sentiment_label.value if post.sentiment_label else None
+            sentiment_label=post.sentiment_label.value if post.sentiment_label else None,
+            thread_data=thread_data_json,
+            has_accepted_solution=getattr(post, 'has_accepted_solution', False),
+            total_replies=getattr(post, 'total_replies', 0)
         )
         db.add(db_post)
         db.commit()

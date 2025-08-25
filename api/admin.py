@@ -96,7 +96,10 @@ async def migrate_database(force_recreate: bool = False):
                 "business_impact": "VARCHAR(30)",
                 "business_value": "VARCHAR(50)",  # Match model - should be VARCHAR not INTEGER
                 "extracted_issues": "JSONB",
-                "mentioned_products": "JSONB"
+                "mentioned_products": "JSONB",
+                "thread_data": "JSONB",  # Full thread/reply data
+                "has_accepted_solution": "BOOLEAN DEFAULT FALSE",
+                "total_replies": "INTEGER DEFAULT 0"
             }
         else:
             # SQLite - use TEXT for JSON fields
@@ -111,7 +114,10 @@ async def migrate_database(force_recreate: bool = False):
                 "business_impact": "VARCHAR(30)",
                 "business_value": "VARCHAR(50)",
                 "extracted_issues": "TEXT",
-                "mentioned_products": "TEXT"
+                "mentioned_products": "TEXT",
+                "thread_data": "TEXT",  # Full thread/reply data
+                "has_accepted_solution": "INTEGER DEFAULT 0",  # SQLite uses INTEGER for boolean
+                "total_replies": "INTEGER DEFAULT 0"
             }
         
         added_columns = []

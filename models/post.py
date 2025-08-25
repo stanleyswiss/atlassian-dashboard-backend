@@ -70,6 +70,11 @@ class PostBase(BaseModel):
     business_value: Optional[str] = Field(None, max_length=50)
     extracted_issues: Optional[List[str]] = Field(default_factory=list)
     mentioned_products: Optional[List[str]] = Field(default_factory=list)
+    
+    # Thread/discussion data
+    thread_data: Optional[Dict[str, Any]] = Field(None)  # Full thread analysis
+    has_accepted_solution: bool = Field(False)
+    total_replies: int = Field(0)
 
 class PostCreate(PostBase):
     pass

@@ -32,6 +32,11 @@ class PostDB(Base):
     extracted_issues = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
     mentioned_products = Column(Text, nullable=True)  # JSON stored as TEXT for compatibility
     
+    # Thread/discussion data
+    thread_data = Column(Text, nullable=True)  # JSON with replies, solution status, participants
+    has_accepted_solution = Column(Boolean, default=False)  # Quick flag for solution status
+    total_replies = Column(Integer, default=0)  # Number of replies in thread
+    
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

@@ -203,31 +203,110 @@ class AtlassianScraper:
             if not title:
                 title = "No title"
             
-            # Extract content using modern Atlassian Community selectors
-            content_selectors = [
-                '.lia-message-body-content',  # Modern Atlassian Community
-                '.lia-message-body',
-                '.message-body-content',
-                '.thread-body .message-body',
-                '.message-content',
-                '.post-content'
+            # Extract ALL posts/replies in the thread
+            all_messages = []
+            message_selectors = [
+                '.lia-quilt-row-main .lia-message-view',  # Modern Atlassian Community messages
+                '.message-list .message',  # Alternative message container
+                '.thread-container .message-wrapper',  # Thread messages
+                'article.message'  # Article-based messages
             ]
             
-            content = ""
-            html_content = ""
-            for selector in content_selectors:
-                content_elem = soup.select_one(selector)
-                if content_elem:
-                    # Store both HTML and text versions
-                    html_content = str(content_elem)  # Preserve HTML with images
-                    content = content_elem.get_text(strip=True, separator=' ')  # Text only
-                    
-                    # Limit content length for storage
-                    if len(content) > 2000:
-                        content = content[:2000] + "..."
-                    if len(html_content) > 10000:  # Allow more space for HTML
-                        html_content = html_content[:10000] + "..."
+            # Try different selectors to find all messages
+            messages_found = []
+            for selector in message_selectors:
+                messages = soup.select(selector)
+                if messages:
+                    messages_found = messages
+                    logger.info(f"Found {len(messages)} messages using selector: {selector}")
                     break
+            
+            # If no messages found with specific selectors, try a more general approach
+            if not messages_found:
+                # Look for all message body content
+                messages_found = soup.select('.lia-message-body-content')
+                if messages_found:
+                    logger.info(f"Found {len(messages_found)} message bodies using fallback selector")
+            
+            # Check for accepted solution
+            has_accepted_solution = bool(soup.select_one('.lia-component-solution-info, .accepted-solution-highlight, .solution-message'))
+            
+            # Process each message
+            for idx, msg in enumerate(messages_found[:10]):  # Limit to first 10 messages
+                msg_content = ""
+                msg_html = ""
+                
+                # Extract message content
+                body = msg if msg.name == 'div' and 'lia-message-body-content' in msg.get('class', []) else msg.select_one('.lia-message-body-content, .message-body, .message-content')
+                if body:
+                    msg_html = str(body)
+                    msg_content = body.get_text(strip=True, separator=' ')
+                    
+                # Check if this is an accepted solution
+                is_solution = bool(msg.select_one('.lia-component-solution-info, .accepted-solution'))
+                
+                # Get author info
+                author_elem = msg.select_one('.lia-user-name, .username, .author-name')
+                author = author_elem.get_text(strip=True) if author_elem else "Unknown"
+                
+                # Get timestamp
+                time_elem = msg.select_one('.lia-message-posted-on, .message-time, time')
+                timestamp = time_elem.get_text(strip=True) if time_elem else ""
+                
+                all_messages.append({
+                    'position': idx,
+                    'author': author,
+                    'content': msg_content[:1000],  # Limit individual message length
+                    'html': msg_html[:5000],
+                    'is_solution': is_solution,
+                    'timestamp': timestamp
+                })
+                
+                if is_solution:
+                    logger.info(f"✅ Found accepted solution at position {idx}")
+            
+            # Combine content for storage (original post + key replies)
+            if all_messages:
+                # Use first message as primary content
+                content = all_messages[0]['content']
+                html_content = all_messages[0]['html']
+                
+                # Add solution or key replies to content
+                solution_found = False
+                for msg in all_messages[1:]:
+                    if msg['is_solution']:
+                        content += f"\n\n[SOLUTION by {msg['author']}]: {msg['content']}"
+                        solution_found = True
+                        break
+                
+                # If no marked solution, include first few replies
+                if not solution_found and len(all_messages) > 1:
+                    content += "\n\n[REPLIES]:"
+                    for msg in all_messages[1:3]:  # First 2 replies
+                        content += f"\n{msg['author']}: {msg['content'][:200]}..."
+                
+                # Store thread metadata in the post
+                thread_data = {
+                    'total_replies': len(all_messages) - 1,
+                    'has_accepted_solution': has_accepted_solution,
+                    'solution_position': next((m['position'] for m in all_messages if m['is_solution']), None),
+                    'participants': list(set(m['author'] for m in all_messages))
+                }
+            else:
+                # Fallback to original single-message extraction
+                content = ""
+                html_content = ""
+                for selector in ['.lia-message-body-content', '.lia-message-body', '.message-body-content']:
+                    content_elem = soup.select_one(selector)
+                    if content_elem:
+                        html_content = str(content_elem)
+                        content = content_elem.get_text(strip=True, separator=' ')
+                        if len(content) > 2000:
+                            content = content[:2000] + "..."
+                        if len(html_content) > 10000:
+                            html_content = html_content[:10000] + "..."
+                        break
+                thread_data = {}
                     
             # Try meta description as fallback
             if not content or content == "Content not available":
@@ -265,14 +344,24 @@ class AtlassianScraper:
             else:
                 excerpt = content
             
-            return {
+            # Include thread data in the returned post
+            post_data = {
                 'title': title,
                 'content': content,
                 'html_content': html_content,
                 'author': author,
                 'date': post_date,
-                'excerpt': excerpt
+                'excerpt': excerpt,
+                'thread_data': thread_data  # NEW: Full thread information
             }
+            
+            # Log thread analysis summary
+            if thread_data:
+                logger.info(f"📊 Thread analysis - Replies: {thread_data.get('total_replies', 0)}, "
+                          f"Solution: {'Yes' if thread_data.get('has_accepted_solution') else 'No'}, "
+                          f"Participants: {len(thread_data.get('participants', []))}")
+            
+            return post_data
             
         except Exception as e:
             logger.error(f"Error parsing post content from {post_url}: {e}")
