@@ -306,9 +306,15 @@ class AtlassianScraper:
                 # Check if this is an accepted solution
                 is_solution = bool(msg.select_one('.lia-component-solution-info, .accepted-solution'))
                 
-                # Get author info
-                author_elem = msg.select_one('.lia-user-name, .username, .author-name')
-                author = author_elem.get_text(strip=True) if author_elem else "Unknown"
+                # Get author info with comprehensive selectors
+                author_selectors = ['.lia-user-name-link', '.lia-user-name', '.user-name', '.username', '.author-name', '.post-author', 'a[href*="/profile/"]']
+                author = "Unknown"
+                for selector in author_selectors:
+                    author_elem = msg.select_one(selector)
+                    if author_elem:
+                        author = author_elem.get_text(strip=True)
+                        if author:  # Make sure we got actual text, not just whitespace
+                            break
                 
                 # Get timestamp
                 time_elem = msg.select_one('.lia-message-posted-on, .message-time, time')
@@ -394,11 +400,20 @@ class AtlassianScraper:
             # Extract author using modern selectors
             author_selectors = [
                 '.lia-user-name-link',  # Modern Atlassian Community
+                '.lia-user-name',  # Alternative Lithium selector
+                '.user-name',  # Generic user name
+                '.author-info .username',  # Author info container
+                '.post-author',  # Post author
                 '.MessageAuthor .username', 
                 '.author-name',
                 '.message-author', 
                 '.username',
-                '[data-author]'
+                '[data-author]',
+                '.user-info .name',  # User info name
+                '.profile-link',  # Profile link text
+                'a[href*="/profile/"]',  # Profile link by href
+                '.post-meta .author',  # Post metadata author
+                '.message-header .author'  # Message header author
             ]
             
             author = "Anonymous"
@@ -406,7 +421,12 @@ class AtlassianScraper:
                 author_elem = soup.select_one(selector)
                 if author_elem:
                     author = author_elem.get_text(strip=True)
-                    break
+                    if author:  # Make sure we got actual text, not just whitespace
+                        logger.info(f"📝 Found author '{author}' using selector '{selector}'")
+                        break
+                        
+            if author == "Anonymous":
+                logger.warning(f"⚠️ No author found for post: {post_url} - tried {len(author_selectors)} selectors")
             
             # Date - try to extract post date
             date_elem = soup.select_one('[data-timestamp], .post-date, .message-date')
