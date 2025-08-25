@@ -354,10 +354,14 @@ class VisionAnalyzer:
             post_url = post.get('url', '')
             
             # Debug logging for image extraction
+            img_tags_count = len(re.findall(r'<img[^>]*>', post_html.lower())) if post_html else 0
+            src_count = len(re.findall(r'src\s*=\s*["\'][^"\']*["\']', post_html.lower())) if post_html else 0
+            
             logger.info(f"🔍 Image extraction debug - Post {post.get('id', 'unknown')}: "
                        f"HTML content: {'Yes' if post.get('html_content') else 'No'}, "
                        f"HTML length: {len(post_html)}, "
-                       f"Has <img> tags: {'<img' in post_html.lower()}")
+                       f"<img> tags: {img_tags_count}, "
+                       f"src= attributes: {src_count}")
             
             images = await self.extract_images_from_post(post_html, post_url)
             

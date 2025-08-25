@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Set
 from datetime import datetime
 import re
+import random
 from urllib.parse import urljoin, urlparse
 import logging
 from config import settings
@@ -31,15 +32,26 @@ class AtlassianScraper:
         
     async def __aenter__(self):
         timeout = aiohttp.ClientTimeout(total=settings.scraper_timeout)
+        # Enhanced headers to avoid bot detection
         self.session = aiohttp.ClientSession(
             timeout=timeout,
             headers={
-                'User-Agent': settings.scraper_user_agent,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
                 'Connection': 'keep-alive',
-            }
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"macOS"'
+            },
+            connector=aiohttp.TCPConnector(ssl=False)  # Handle SSL issues
         )
         return self
         
@@ -47,17 +59,26 @@ class AtlassianScraper:
         if self.session:
             await self.session.close()
             
-    async def fetch_page(self, url: str) -> Optional[str]:
+    async def fetch_page(self, url: str, referer: str = None) -> Optional[str]:
         """Fetch a single page with error handling and retry logic"""
         max_retries = 3
         
         for attempt in range(max_retries):
             try:
-                async with self.session.get(url) as response:
+                # Add referer header for pagination requests
+                headers = {}
+                if referer:
+                    headers['Referer'] = referer
+                    
+                async with self.session.get(url, headers=headers) as response:
                     if response.status == 200:
                         content = await response.text()
                         logger.info(f"✅ Fetched {url}")
                         return content
+                    elif response.status == 403:
+                        logger.warning(f"❌ HTTP 403 (Forbidden) for {url} - possible bot detection")
+                        # Wait longer on 403 to avoid triggering more blocks
+                        await asyncio.sleep(settings.scraper_delay * 5)
                     else:
                         logger.warning(f"❌ HTTP {response.status} for {url}")
                         
@@ -67,7 +88,10 @@ class AtlassianScraper:
                 logger.error(f"❌ Error fetching {url}: {e}")
                 
             if attempt < max_retries - 1:
-                await asyncio.sleep(settings.scraper_delay * (attempt + 1))
+                # Progressive backoff with jitter to avoid patterns
+                import random
+                delay = settings.scraper_delay * (attempt + 1) + random.uniform(0.5, 2.0)
+                await asyncio.sleep(delay)
                 
         return None
         
@@ -76,18 +100,17 @@ class AtlassianScraper:
         soup = BeautifulSoup(html, 'html.parser')
         posts = []
         
-        # Look for post links - Atlassian uses different selectors for different page formats
+        # Look for post links - Use selectors that actually work based on testing
         post_selectors = [
-            '.lia-list-row-title a',  # New forums format - EXACT selector from HTML analysis
-            'a[href*="/t5/"][href*="/td-p/"]',  # Main post links (old format)
-            'a[href*="/forums/"][href*="/qaq-p/"]',  # New forums format
-            '.message-subject a',  # Alternative selector
+            'a[href*="/forums/"][href*="/qaq-p/"]',  # Primary working selector for new forums
+            '.message-subject a',  # Alternative selector that works
+            'h2 a[href*="/forums/"]',  # Header links to posts
+            'h3 a[href*="/forums/"]',  # H3 header links to posts
+            '.lia-list-row-title a',  # Legacy format
+            'a[href*="/t5/"][href*="/td-p/"]',  # Old format fallback
             '.thread-title a',  # Another common selector
-            'a[data-testid="thread-link"]',  # New forum format
-            '.lia-link-navigation',  # Generic Lithium platform links
             'article h2 a',  # Blog post titles (for announcements)
             '.post-title a',  # Blog post alternative
-            'h3 a[href*="/blog/"]',  # Blog links
         ]
         
         for selector in post_selectors:
@@ -206,7 +229,9 @@ class AtlassianScraper:
             # Extract ALL posts/replies in the thread
             all_messages = []
             message_selectors = [
-                '.lia-quilt-row-main .lia-message-view',  # Modern Atlassian Community messages
+                '.lia-message-view-display',  # Primary modern Lithium message container
+                '.lia-panel-message-content',  # Content panel container
+                '.lia-quilt-row-main .lia-message-view',  # Legacy selector
                 '.message-list .message',  # Alternative message container
                 '.thread-container .message-wrapper',  # Thread messages
                 'article.message'  # Article-based messages
@@ -221,12 +246,19 @@ class AtlassianScraper:
                     logger.info(f"Found {len(messages)} messages using selector: {selector}")
                     break
             
-            # If no messages found with specific selectors, try a more general approach
+            # If no messages found with specific selectors, try modern Lithium approach
             if not messages_found:
-                # Look for all message body content
-                messages_found = soup.select('.lia-message-body-content')
-                if messages_found:
-                    logger.info(f"Found {len(messages_found)} message bodies using fallback selector")
+                # Try modern Lithium dynamic IDs
+                dynamic_bodies = soup.select('[id^="bodyDisplay_"]')
+                if dynamic_bodies:
+                    messages_found = [body.parent for body in dynamic_bodies if body.parent]
+                    logger.info(f"Found {len(messages_found)} messages using dynamic body IDs")
+                
+                # Final fallback to message body content
+                if not messages_found:
+                    messages_found = soup.select('.lia-message-body-content')
+                    if messages_found:
+                        logger.info(f"Found {len(messages_found)} message bodies using fallback selector")
             
             # Check for accepted solution
             has_accepted_solution = bool(soup.select_one('.lia-component-solution-info, .accepted-solution-highlight, .solution-message'))
@@ -236,11 +268,27 @@ class AtlassianScraper:
                 msg_content = ""
                 msg_html = ""
                 
-                # Extract message content
-                body = msg if msg.name == 'div' and 'lia-message-body-content' in msg.get('class', []) else msg.select_one('.lia-message-body-content, .message-body, .message-content')
+                # Extract message content using better selectors
+                body = None
+                # Try multiple content selectors
+                for content_selector in ['.lia-message-body-content', '[id^="bodyDisplay_"]', '.message-body', '.message-content']:
+                    body = msg.select_one(content_selector)
+                    if body:
+                        break
+                
+                # Fallback if this message element IS the content
+                if not body and msg.name == 'div' and 'lia-message-body-content' in msg.get('class', []):
+                    body = msg
+                
                 if body:
+                    # Preserve HTML content for image extraction
                     msg_html = str(body)
                     msg_content = body.get_text(strip=True, separator=' ')
+                    
+                    # Log image detection for debugging
+                    has_images = '<img' in msg_html.lower() or 'src=' in msg_html.lower()
+                    if has_images:
+                        logger.info(f"🖼️ Found images in message {idx}: {len(re.findall(r'<img[^>]+>', msg_html.lower()))} img tags")
                     
                 # Check if this is an accepted solution
                 is_solution = bool(msg.select_one('.lia-component-solution-info, .accepted-solution'))
@@ -269,7 +317,12 @@ class AtlassianScraper:
             if all_messages:
                 # Use first message as primary content
                 content = all_messages[0]['content']
-                html_content = all_messages[0]['html']
+                html_content = all_messages[0]['html']  # PRESERVE HTML for image extraction
+                
+                # Log HTML preservation for debugging
+                if html_content and ('<img' in html_content.lower() or 'src=' in html_content.lower()):
+                    img_count = len(re.findall(r'<img[^>]+>', html_content.lower()))
+                    logger.info(f"📸 Preserving HTML with {img_count} images for post analysis")
                 
                 # Add solution or key replies to content
                 solution_found = False
@@ -299,12 +352,20 @@ class AtlassianScraper:
                 for selector in ['.lia-message-body-content', '.lia-message-body', '.message-body-content']:
                     content_elem = soup.select_one(selector)
                     if content_elem:
+                        # CRITICAL: Preserve full HTML content for image extraction
                         html_content = str(content_elem)
                         content = content_elem.get_text(strip=True, separator=' ')
+                        
+                        # Log if images found in HTML
+                        if html_content and ('<img' in html_content.lower() or 'src=' in html_content.lower()):
+                            img_count = len(re.findall(r'<img[^>]+>', html_content.lower()))
+                            logger.info(f"📷 Fallback extraction found {img_count} images in HTML content")
+                        
                         if len(content) > 2000:
                             content = content[:2000] + "..."
-                        if len(html_content) > 10000:
-                            html_content = html_content[:10000] + "..."
+                        # Don't truncate HTML content too aggressively - images need full URLs
+                        if len(html_content) > 25000:
+                            html_content = html_content[:25000] + "..."
                         break
                 thread_data = {}
                     
@@ -384,10 +445,13 @@ class AtlassianScraper:
         while current_url and page_num <= max_pages and len(all_post_links) < max_posts:
             logger.info(f"📄 Fetching page {page_num} for {category}: {current_url}")
             
-            # Get the forum page
-            html = await self.fetch_page(current_url)
+            # Get the forum page with referer for pagination
+            referer = base_url if page_num == 1 else None
+            html = await self.fetch_page(current_url, referer)
             if not html:
                 logger.error(f"Failed to fetch forum page {page_num} for {category}")
+                if page_num > 1:
+                    logger.info(f"Pagination blocked after page {page_num-1} - continuing with collected posts")
                 break
                 
             # Parse post list from this page
@@ -409,8 +473,11 @@ class AtlassianScraper:
             current_url = next_url
             page_num += 1
             
-            # Delay between pages
-            await asyncio.sleep(settings.scraper_delay * 2)
+            # Longer delay between pages to avoid bot detection
+            import random
+            page_delay = settings.scraper_delay * 3 + random.uniform(1.0, 3.0)
+            logger.info(f"⏱️ Waiting {page_delay:.1f}s before next page to avoid detection")
+            await asyncio.sleep(page_delay)
         
         # Limit total posts
         all_post_links = all_post_links[:max_posts]
