@@ -46,7 +46,10 @@ def migrate_database():
         "business_impact VARCHAR(20)",
         "business_value INTEGER DEFAULT 0",
         "extracted_issues TEXT", # JSON stored as text
-        "mentioned_products TEXT" # JSON stored as text
+        "mentioned_products TEXT", # JSON stored as text
+        "thread_data TEXT", # Full thread/reply data
+        "has_accepted_solution BOOLEAN DEFAULT FALSE", # Quick flag for solution status
+        "total_replies INTEGER DEFAULT 0" # Number of replies in thread
     ]
     
     column_names = [
@@ -59,7 +62,10 @@ def migrate_database():
         "business_impact", 
         "business_value",
         "extracted_issues",
-        "mentioned_products"
+        "mentioned_products",
+        "thread_data",
+        "has_accepted_solution",
+        "total_replies"
     ]
     
     with engine.connect() as conn:
