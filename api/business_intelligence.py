@@ -31,6 +31,12 @@ async def get_critical_issues(days: int = 7):
         
         # Transform posts to match frontend CriticalIssue interface
         critical_issues = []
+        
+        logger.info(f"🔍 BI Critical Issues Debug - Checking {len(recent_posts)} recent posts")
+        sample_posts = recent_posts[:3]
+        for sample in sample_posts:
+            logger.info(f"  Sample post {sample.id}: enhanced_category={sample.enhanced_category}, problem_severity={sample.problem_severity}, title='{sample.title[:50]}...'")
+        
         for post in recent_posts:
             # Use enhanced analysis fields first, fallback to keyword matching
             is_critical = (
