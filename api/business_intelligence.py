@@ -1,5 +1,6 @@
 """
 Business Intelligence API endpoints for actionable community insights
+Updated field mappings to match frontend TypeScript interfaces
 """
 import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks
