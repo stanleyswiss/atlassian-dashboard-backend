@@ -353,6 +353,12 @@ class VisionAnalyzer:
             post_html = post.get('html_content') or post.get('content', '')
             post_url = post.get('url', '')
             
+            # Debug logging for image extraction
+            logger.info(f"🔍 Image extraction debug - Post {post.get('id', 'unknown')}: "
+                       f"HTML content: {'Yes' if post.get('html_content') else 'No'}, "
+                       f"HTML length: {len(post_html)}, "
+                       f"Has <img> tags: {'<img' in post_html.lower()}")
+            
             images = await self.extract_images_from_post(post_html, post_url)
             
             if not images:

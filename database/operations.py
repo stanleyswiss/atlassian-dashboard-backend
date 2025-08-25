@@ -60,6 +60,15 @@ class PostOperations:
         return query.order_by(desc(PostDB.date)).offset(skip).limit(limit).all()
     
     @staticmethod
+    def get_recent_posts(db: Session, days: int = 7, limit: int = 100) -> List[PostDB]:
+        """Get recent posts within specified days"""
+        from datetime import datetime, timedelta
+        cutoff_date = datetime.now() - timedelta(days=days)
+        return db.query(PostDB).filter(
+            PostDB.created_at >= cutoff_date
+        ).order_by(desc(PostDB.created_at)).limit(limit).all()
+    
+    @staticmethod
     def update_post(db: Session, post_id: int, post_update: PostUpdate) -> Optional[PostDB]:
         db_post = db.query(PostDB).filter(PostDB.id == post_id).first()
         if not db_post:
