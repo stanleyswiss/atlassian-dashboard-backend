@@ -307,7 +307,7 @@ class AtlassianScraper:
                 is_solution = bool(msg.select_one('.lia-component-solution-info, .accepted-solution'))
                 
                 # Get author info with comprehensive selectors
-                author_selectors = ['.lia-user-name-link', '.lia-user-name', '.user-name', '.username', '.author-name', '.post-author', 'a[href*="/profile/"]']
+                author_selectors = ['a[href*="/forums/user/viewprofilepage/user-id/"]', '.lia-user-name-link', '.lia-user-name', '.user-name', '.username', '.author-name', '.post-author']
                 author = "Unknown"
                 for selector in author_selectors:
                     author_elem = msg.select_one(selector)
@@ -399,6 +399,7 @@ class AtlassianScraper:
             
             # Extract author using modern selectors
             author_selectors = [
+                'a[href*="/forums/user/viewprofilepage/user-id/"]',  # Primary Atlassian Community selector
                 '.lia-user-name-link',  # Modern Atlassian Community
                 '.lia-user-name',  # Alternative Lithium selector
                 '.user-name',  # Generic user name
