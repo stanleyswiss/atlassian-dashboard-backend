@@ -126,10 +126,13 @@ async def get_forums_overview(days: int = 7):
                     "post_count": total_posts,
                     "solved_count": solved_posts,
                     "critical_count": critical_posts,
-                    "author_count": len(authors),
+                    "authors_count": len(authors),  # Match frontend interface
                     "health_score": round(health_score, 1),
-                    "latest_activity": latest_post.created_at.isoformat() if latest_post else None,
-                    "latest_activity_title": latest_post.title if latest_post else None,
+                    "latest_activity": {
+                        "title": latest_post.title if latest_post else None,
+                        "author": latest_post.author if latest_post else None,
+                        "date": latest_post.created_at.isoformat() if latest_post else None
+                    } if latest_post else None,
                     "resolution_rate": round(resolution_rate * 100, 1) if total_posts > 0 else 0,
                 }
             
@@ -143,16 +146,12 @@ async def get_forums_overview(days: int = 7):
                                   key=lambda f: forum_stats[f]['post_count']) if forum_stats else None
             
             return {
-                "time_period": f"Last {days} days",
-                "overview": {
-                    "total_posts": total_posts_all,
-                    "total_solved": total_solved_all,
-                    "total_critical": total_critical_all,
-                    "total_forums": len(FORUM_CONFIGS),
-                    "most_active_forum": most_active_forum,
-                    "overall_resolution_rate": round(total_solved_all / total_posts_all * 100, 1) if total_posts_all > 0 else 0
-                },
-                "forums": forum_stats
+                "success": True,
+                "forums": forum_stats,
+                "total_posts": total_posts_all,
+                "total_solved": total_solved_all,
+                "total_critical": total_critical_all,
+                "generated_at": datetime.now().isoformat()
             }
         
     except Exception as e:
