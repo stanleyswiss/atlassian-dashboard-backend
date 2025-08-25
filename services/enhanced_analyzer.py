@@ -63,10 +63,13 @@ class EnhancedAnalyzer:
             async with self.vision_analyzer:
                 vision_data = await self.vision_analyzer.analyze_post_with_vision(post)
             
-            # Enhanced text analysis
+            # Enhanced text analysis with fallback
             text_analysis = await self._analyze_text_enhanced(post)
+            if not text_analysis:
+                logger.warning(f"Text analysis returned None for post {post.get('id')}, using fallback")
+                text_analysis = self._generate_mock_text_analysis(post)
             
-            # Combine analyses for final categorization
+            # Combine analyses for final categorization  
             enhanced_category = self._determine_enhanced_category(post, text_analysis, vision_data)
             
             # Extract business intelligence
@@ -198,6 +201,10 @@ class EnhancedAnalyzer:
         """
         Determine enhanced category based on combined analysis
         """
+        # Ensure we have valid dictionaries (handle None cases)
+        text_analysis = text_analysis or {}
+        vision_data = vision_data or {}
+        
         # Check thread data for solution status
         thread_data = post.get('thread_data', {})
         has_solution = thread_data.get('has_accepted_solution', False)
@@ -244,6 +251,10 @@ class EnhancedAnalyzer:
         """
         Extract actionable business insights from the analysis
         """
+        # Ensure we have valid dictionaries (handle None cases)
+        text_analysis = text_analysis or {}
+        vision_data = vision_data or {}
+        
         insights = {
             "business_value": "low",
             "atlassian_team_attention": False,
