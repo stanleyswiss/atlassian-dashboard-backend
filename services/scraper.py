@@ -517,7 +517,7 @@ class AtlassianScraper:
         logger.info(f"✅ Completed scraping {len(posts)} posts from {category}")
         return posts
         
-    async def scrape_all_categories(self, max_posts_per_category: int = 20, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
+    async def scrape_all_categories(self, max_posts_per_category: int = 50, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
         """Scrape all Atlassian community categories across multiple pages"""
         logger.info(f"🚀 Starting full community scrape ({max_posts_per_category} posts per category, up to {max_pages_per_category} pages each)")
         
@@ -591,7 +591,7 @@ class AtlassianScraper:
             }
 
 # Async helper function for easy usage
-async def scrape_atlassian_community(max_posts_per_category: int = 20, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
+async def scrape_atlassian_community(max_posts_per_category: int = 50, max_pages_per_category: int = 3) -> Dict[str, List[Dict]]:
     """Convenience function to scrape all categories across multiple pages"""
     async with AtlassianScraper() as scraper:
         return await scraper.scrape_all_categories(max_posts_per_category, max_pages_per_category)

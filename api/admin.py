@@ -609,6 +609,55 @@ async def force_reanalyze_all_posts(batch_size: int = 25):
     """Force re-analysis of all posts with real OpenAI API (replaces mock data)"""
     return await analyze_all_posts_with_ai(batch_size, force_reanalyze=True)
 
+@router.post("/update-resolution-status")
+async def update_resolution_status_for_existing_posts():
+    """Update resolution_status field for existing posts based on has_accepted_solution"""
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        from datetime import datetime
+        
+        logger.info("🔄 Starting resolution status update for existing posts")
+        
+        updated_count = 0
+        with get_session() as db:
+            # Get all posts that don't have resolution_status set
+            posts_to_update = db.query(PostDB).filter(
+                PostDB.resolution_status.is_(None)
+            ).all()
+            
+            logger.info(f"📊 Found {len(posts_to_update)} posts without resolution status")
+            
+            for post in posts_to_update:
+                # Set resolution status based on solution detection
+                if post.has_accepted_solution:
+                    post.resolution_status = 'resolved'
+                elif post.total_replies and post.total_replies > 0:
+                    post.resolution_status = 'in_progress'
+                else:
+                    post.resolution_status = 'unanswered'
+                
+                post.updated_at = datetime.now()
+                updated_count += 1
+            
+            db.commit()
+            logger.info(f"✅ Updated resolution status for {updated_count} posts")
+        
+        return {
+            "success": True,
+            "message": f"Updated resolution status for {updated_count} posts",
+            "updated_count": updated_count,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to update resolution status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/test-openai-call")
 async def test_single_openai_call():
     """Test a single OpenAI API call to verify it works"""

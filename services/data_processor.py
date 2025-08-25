@@ -7,7 +7,7 @@ import asyncio
 
 from database import PostOperations, AnalyticsOperations, TrendOperations
 from database import PostDB, AnalyticsDB, TrendDB
-from models import PostCreate, PostCategory, SentimentLabel
+from models import PostCreate, PostCategory, SentimentLabel, ResolutionStatus
 from .scraper import AtlassianScraper
 from .ai_analyzer import AIAnalyzer
 
@@ -130,6 +130,14 @@ class DataProcessor:
         post_create.thread_data = thread_data
         post_create.has_accepted_solution = has_accepted_solution
         post_create.total_replies = total_replies
+        
+        # Set resolution status based on solution detection
+        if has_accepted_solution:
+            post_create.resolution_status = ResolutionStatus.resolved
+        elif total_replies > 0:
+            post_create.resolution_status = ResolutionStatus.in_progress
+        else:
+            post_create.resolution_status = ResolutionStatus.unanswered
         
         return post_create
         

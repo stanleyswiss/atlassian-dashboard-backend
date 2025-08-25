@@ -20,7 +20,7 @@ class TaskScheduler:
         self.db_ops = DatabaseOperations()
         self.is_running = False
         self.last_scrape = None
-        self.scrape_interval = 15 * 60  # 15 minutes
+        self.scrape_interval = 3 * 60 * 60  # 3 hours (as documented)
         self.analytics_interval = 60 * 60  # 1 hour
     
     def get_ai_analyzer(self):
@@ -130,7 +130,7 @@ class TaskScheduler:
         try:
             # Scrape all forums
             async with self.scraper:
-                scrape_results = await self.scraper.scrape_all_categories(max_posts_per_category=20)
+                scrape_results = await self.scraper.scrape_all_categories(max_posts_per_category=50, max_pages_per_category=3)
             
             for forum, posts in scrape_results.items():
                 forum_stats = {'scraped': 0, 'new': 0, 'errors': 0}

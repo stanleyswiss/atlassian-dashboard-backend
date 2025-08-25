@@ -46,27 +46,48 @@ async def get_critical_issues(days: int = 7):
                 (post.business_impact in ['productivity_loss', 'workflow_broken', 'data_access_blocked'])
             )
             
-            # More aggressive fallback matching for critical issues
+            # More aggressive fallback matching for critical issues, but exclude announcements
             if not is_critical:
                 title_lower = post.title.lower() if post.title else ''
                 content_lower = (post.content or '').lower()[:200]  # First 200 chars
                 
-                # Check for critical keywords in title or content
-                critical_keywords = ['error', 'bug', 'broken', 'failed', 'critical', 'urgent', 'help needed', 
-                                   'not working', 'stopped working', 'can\'t', 'cannot', 'issue', 'problem']
-                is_critical = any(keyword in title_lower or keyword in content_lower for keyword in critical_keywords)
+                # First check if this is an announcement (exclude from critical issues)
+                announcement_indicators = [
+                    'announcement', 'release', 'new version', 'update', 'introducing', 
+                    'now available', 'rollout', 'launched', 'feature update', 'product update',
+                    'community update', 'new feature'
+                ]
+                is_announcement = (
+                    post.category == 'announcements' or
+                    any(indicator in title_lower or indicator in content_lower for indicator in announcement_indicators)
+                )
                 
-                # Debug logging
-                if is_critical:
-                    logger.info(f"🔍 Critical issue found via keywords: {post.title[:50]}...")
+                if not is_announcement:
+                    # Check for critical keywords in title or content
+                    critical_keywords = ['error', 'bug', 'broken', 'failed', 'critical', 'urgent', 'help needed', 
+                                       'not working', 'stopped working', 'can\'t', 'cannot', 'issue', 'problem']
+                    is_critical = any(keyword in title_lower or keyword in content_lower for keyword in critical_keywords)
+                    
+                    # Debug logging
+                    if is_critical:
+                        logger.info(f"🔍 Critical issue found via keywords: {post.title[:50]}...")
+                else:
+                    logger.info(f"🚫 Skipping announcement from critical issues: {post.title[:50]}...")
             
             if is_critical:
                 # Determine severity from enhanced analysis
                 severity = post.problem_severity if post.problem_severity in ['critical', 'high', 'medium', 'low'] else 'medium'
                 business_impact = post.business_impact or 'unknown'
                 
+                # Create detailed summary for the issue
+                content_snippet = post.content[:300] if post.content else post.excerpt or ''
+                issue_summary = f"{post.title}. " + (content_snippet + '...' if len(content_snippet) > 200 else content_snippet)
+                if not issue_summary.strip():
+                    issue_summary = f"Critical issue reported in {post.category}: {post.title}"
+                
                 critical_issues.append({
                     'issue_title': post.title,
+                    'summary': issue_summary,  # Enhanced detailed summary
                     'severity': severity,
                     'report_count': 1,  # Default for now
                     'affected_products': [post.category],
@@ -127,16 +148,37 @@ async def get_awesome_discoveries(days: int = 7):
                     logger.info(f"🔍 Awesome discovery found via keywords: {post.title[:50]}...")
             
             if is_awesome:
+                # Create detailed summary based on content type
+                content_snippet = post.content[:400] if post.content else post.excerpt or ''
+                
+                # Check if this is an announcement to provide appropriate context
+                title_lower = post.title.lower() if post.title else ''
+                is_announcement = (post.category == 'announcements' or 
+                                 any(indicator in title_lower for indicator in ['announcement', 'release', 'new version', 'update']))
+                
+                if is_announcement:
+                    # For announcements, focus on new features/capabilities
+                    discovery_summary = f"New release: {post.title}. " + (content_snippet[:200] + '...' if content_snippet else 'Check the announcement for exciting new features and capabilities.')
+                    discovery_type = 'product_announcement'
+                    engagement_potential = 'high'  # Announcements are high engagement
+                else:
+                    # For community discoveries, focus on use cases and solutions
+                    discovery_summary = content_snippet[:300] + '...' if len(content_snippet) > 300 else content_snippet
+                    if not discovery_summary.strip():
+                        discovery_summary = f"Awesome discovery shared in {post.category}: {post.title}"
+                    discovery_type = 'community_use_case'
+                    engagement_potential = 'high' if post.enhanced_category == 'awesome_use_case' else 'medium'
+                
                 awesome_discoveries.append({
                     'title': post.title,
-                    'summary': post.excerpt or (post.title[:100] + '...' if post.title else ''),
+                    'summary': discovery_summary,  # Enhanced detailed summary
                     'author': post.author or 'Unknown',
                     'url': post.url or '#',
                     'products_used': [post.category] if post.category else [],
                     'technical_level': 'medium',  # Could use enhanced analysis here
                     'has_screenshots': bool(post.has_screenshots),
-                    'engagement_potential': 'high' if post.enhanced_category == 'awesome_use_case' else 'medium',
-                    'discovery_type': 'workflow_optimization'
+                    'engagement_potential': engagement_potential,
+                    'discovery_type': discovery_type
                 })
         
         return awesome_discoveries[:10]
@@ -182,9 +224,29 @@ async def get_trending_solutions(days: int = 7):
                     logger.info(f"🔍 Trending solution found via keywords: {post.title[:50]}...")
                 
             if is_solution:
+                # Extract detailed solution description from content
+                solution_content = post.content[:500] if post.content else post.excerpt or ''
+                
+                # Create comprehensive solution summary
+                if '[SOLUTION' in solution_content:
+                    # Extract solution part if marked in content
+                    solution_start = solution_content.find('[SOLUTION')
+                    if solution_start != -1:
+                        solution_part = solution_content[solution_start:solution_start+400]
+                        solution_description = solution_part.replace('[SOLUTION', '').strip()
+                    else:
+                        solution_description = solution_content[:300] + '...'
+                else:
+                    solution_description = solution_content[:300] + '...' if len(solution_content) > 300 else solution_content
+                
+                # Fallback if no content
+                if not solution_description.strip():
+                    solution_description = f"Solution shared for {post.category}: {post.title}"
+                
                 trending_solutions.append({
                     'solution_title': post.title,
                     'problem_solved': post.excerpt or (post.title[:100] + '...' if post.title else ''),
+                    'solution_description': solution_description,  # Enhanced detailed solution steps
                     'solution_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
                     'author': post.author or 'Unknown',
                     'url': post.url or '#',
@@ -223,18 +285,32 @@ async def get_unresolved_problems(days: int = 14):
                 (post.enhanced_category in ['problem_report', 'critical_issue'] and post.resolution_status != 'resolved')
             )
             
-            # More aggressive fallback matching for unresolved problems
+            # More aggressive fallback matching for unresolved problems, but exclude announcements
             if not is_unresolved:
                 title_lower = post.title.lower() if post.title else ''
                 content_lower = (post.content or '').lower()[:200]
                 
-                problem_keywords = ['help', 'stuck', 'problem', 'not working', 'issue', 'question', 'how', 
-                                  'can\'t', 'cannot', 'error', 'broken', 'failed', 'trouble', 'difficulty']
-                is_unresolved = any(keyword in title_lower or keyword in content_lower for keyword in problem_keywords)
+                # First check if this is an announcement (exclude from unresolved problems)
+                announcement_indicators = [
+                    'announcement', 'release', 'new version', 'update', 'introducing', 
+                    'now available', 'rollout', 'launched', 'feature update', 'product update',
+                    'community update', 'new feature'
+                ]
+                is_announcement = (
+                    post.category == 'announcements' or
+                    any(indicator in title_lower or indicator in content_lower for indicator in announcement_indicators)
+                )
                 
-                # Debug logging  
-                if is_unresolved:
-                    logger.info(f"🔍 Unresolved problem found via keywords: {post.title[:50]}...")
+                if not is_announcement:
+                    problem_keywords = ['help', 'stuck', 'problem', 'not working', 'issue', 'question', 'how', 
+                                      'can\'t', 'cannot', 'error', 'broken', 'failed', 'trouble', 'difficulty']
+                    is_unresolved = any(keyword in title_lower or keyword in content_lower for keyword in problem_keywords)
+                    
+                    # Debug logging  
+                    if is_unresolved:
+                        logger.info(f"🔍 Unresolved problem found via keywords: {post.title[:50]}...")
+                else:
+                    logger.info(f"🚫 Skipping announcement from unresolved problems: {post.title[:50]}...")
                 
             if is_unresolved:
                 # Calculate days since post
