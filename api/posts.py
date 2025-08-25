@@ -352,6 +352,55 @@ async def delete_post(post_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error deleting post {post_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete post")
 
+@router.get("/debug/conversion-test")
+async def debug_conversion_test(db: Session = Depends(get_db)):
+    """Test post conversion to identify what's failing"""
+    try:
+        from database.models import PostDB
+        
+        # Get just one post to test conversion
+        test_post = db.query(PostDB).first()
+        if not test_post:
+            return {"error": "No posts in database"}
+            
+        # Test the conversion step by step
+        result = {
+            "raw_post_fields": {
+                "id": test_post.id,
+                "title": test_post.title,
+                "author": test_post.author,
+                "category": test_post.category,
+                "resolution_status": str(test_post.resolution_status),
+                "has_accepted_solution": test_post.has_accepted_solution,
+                "problem_severity": str(test_post.problem_severity),
+                "business_impact": str(test_post.business_impact),
+                "has_vision_analysis": bool(test_post.vision_analysis),
+                "has_text_analysis": bool(test_post.text_analysis),
+                "has_extracted_issues": bool(test_post.extracted_issues),
+                "has_mentioned_products": bool(test_post.mentioned_products)
+            }
+        }
+        
+        # Try to convert the post
+        try:
+            converted_post = convert_db_post_to_response(test_post)
+            result["conversion_success"] = True
+            result["converted_post_sample"] = {
+                "id": converted_post.id,
+                "title": converted_post.title[:50] if converted_post.title else None,
+                "author": converted_post.author,
+                "resolution_status": converted_post.resolution_status
+            }
+        except Exception as conv_error:
+            result["conversion_success"] = False
+            result["conversion_error"] = str(conv_error)
+            result["error_type"] = type(conv_error).__name__
+            
+        return result
+        
+    except Exception as e:
+        return {"error": str(e), "error_type": type(e).__name__}
+
 @router.get("/debug/resolution-status")
 async def debug_resolution_status(db: Session = Depends(get_db)):
     """Debug endpoint to check resolution status distribution"""
