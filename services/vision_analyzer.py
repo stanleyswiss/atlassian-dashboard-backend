@@ -201,7 +201,7 @@ class VisionAnalyzer:
                     # Legacy OpenAI API
                     logger.info("Using OpenAI legacy API for vision analysis")
                     response = await openai.ChatCompletion.acreate(
-                        model="gpt-4-vision-preview",
+                        model="gpt-4o-mini",  # Use same model for consistency
                         messages=messages,
                         max_tokens=800,
                         temperature=0.2
