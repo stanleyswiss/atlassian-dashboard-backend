@@ -243,28 +243,53 @@ class DatabaseOperations:
                 existing_post = db.query(PostDB).filter(PostDB.url == post_data.get('url')).first()
                 
                 if existing_post:
+                    # Extract thread_data if present
+                    thread_data = post_data.get('thread_data', {})
+                    
                     # Update existing post
                     for field, value in post_data.items():
-                        if hasattr(existing_post, field) and field != 'id':
+                        if hasattr(existing_post, field) and field != 'id' and field != 'thread_data':
                             setattr(existing_post, field, value)
+                    
+                    # Handle thread_data separately
+                    if thread_data:
+                        existing_post.has_accepted_solution = thread_data.get('has_accepted_solution', False)
+                        existing_post.total_replies = thread_data.get('total_replies', 0)
+                        
+                        # Store thread_data as JSON
+                        import json
+                        existing_post.thread_data = json.dumps(thread_data)
                     
                     existing_post.updated_at = datetime.now()
                     db.commit()
                     db.refresh(existing_post)
                     return existing_post
                 else:
+                    # Extract thread_data if present
+                    thread_data = post_data.get('thread_data', {})
+                    
                     # Create new post
                     db_post = PostDB(
                         title=post_data.get('title', ''),
                         content=post_data.get('content', ''),
+                        html_content=post_data.get('html_content'),
                         author=post_data.get('author', ''),
                         category=post_data.get('category', ''),
                         url=post_data.get('url', ''),
                         excerpt=post_data.get('excerpt', ''),
                         date=post_data.get('date', datetime.now()),
                         sentiment_score=post_data.get('sentiment_score'),
-                        sentiment_label=post_data.get('sentiment_label')
+                        sentiment_label=post_data.get('sentiment_label'),
+                        # Thread-related fields
+                        has_accepted_solution=thread_data.get('has_accepted_solution', False) if thread_data else False,
+                        total_replies=thread_data.get('total_replies', 0) if thread_data else 0
                     )
+                    
+                    # Store thread_data as JSON if present
+                    if thread_data:
+                        import json
+                        db_post.thread_data = json.dumps(thread_data)
+                    
                     db.add(db_post)
                     db.commit()
                     db.refresh(db_post)

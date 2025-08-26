@@ -55,15 +55,19 @@ async def trigger_all_forums_scraping(background_tasks: BackgroundTasks):
                             # Store posts in database
                             for post in posts:
                                 try:
-                                    await db_ops.create_or_update_post({
+                                    # Pass the full post data including thread_data
+                                    post_to_save = {
                                         'title': post.get('title', 'No title'),
                                         'content': post.get('content', 'No content'),
+                                        'html_content': post.get('html_content'),
                                         'author': post.get('author', 'Anonymous'),
                                         'category': forum_name,
                                         'url': post.get('url', ''),
                                         'excerpt': post.get('excerpt', ''),
-                                        'date': post.get('date', datetime.now())
-                                    })
+                                        'date': post.get('date', datetime.now()),
+                                        'thread_data': post.get('thread_data', {})
+                                    }
+                                    await db_ops.create_or_update_post(post_to_save)
                                 except Exception as save_error:
                                     logger.error(f"Error saving post: {save_error}")
                                     continue
@@ -126,15 +130,19 @@ async def scrape_working_forums(background_tasks: BackgroundTasks, max_posts: in
                     
                     # Store posts in database
                     for post in posts:
-                        await db_ops.create_or_update_post({
+                        # Pass the full post data including thread_data
+                        post_to_save = {
                             'title': post.get('title', 'No title'),
                             'content': post.get('content', 'No content'),
+                            'html_content': post.get('html_content'),
                             'author': post.get('author', 'Anonymous'),
                             'category': forum,
                             'url': post.get('url', ''),
                             'excerpt': post.get('excerpt', ''),
-                            'date': post.get('date', datetime.now())
-                        })
+                            'date': post.get('date', datetime.now()),
+                            'thread_data': post.get('thread_data', {})
+                        }
+                        await db_ops.create_or_update_post(post_to_save)
                     
                     logger.info(f"✅ Stored {len(posts)} real posts from {forum}")
         
@@ -419,15 +427,19 @@ async def fresh_start_scraping(background_tasks: BackgroundTasks):
                             # Store posts in database
                             for post in posts:
                                 try:
-                                    await db_ops.create_or_update_post({
+                                    # Pass the full post data including thread_data
+                                    post_to_save = {
                                         'title': post.get('title', 'No title'),
                                         'content': post.get('content', 'No content'),
+                                        'html_content': post.get('html_content'),
                                         'author': post.get('author', 'Anonymous'),
                                         'category': forum_name,
                                         'url': post.get('url', ''),
                                         'excerpt': post.get('excerpt', ''),
-                                        'date': post.get('date', datetime.now())
-                                    })
+                                        'date': post.get('date', datetime.now()),
+                                        'thread_data': post.get('thread_data', {})
+                                    }
+                                    await db_ops.create_or_update_post(post_to_save)
                                 except Exception as save_error:
                                     logger.error(f"Error saving post: {save_error}")
                                     continue
