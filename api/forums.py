@@ -96,7 +96,7 @@ async def get_forums_overview(days: int = 7):
                 # Posts with solutions/resolved status  
                 solved_posts = len([p for p in forum_posts if 
                                   p.resolution_status == 'resolved' or
-                                  (hasattr(p, 'has_accepted_solution') and p.has_accepted_solution)])
+                                  p.has_accepted_solution == True])
                 
                 # Critical issues
                 critical_posts = len([p for p in forum_posts if 
