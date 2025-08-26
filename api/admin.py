@@ -850,3 +850,69 @@ async def fix_empty_authors():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+@router.post("/extract-solutions-from-thread-data")
+async def extract_solutions_from_existing_thread_data():
+    """Extract has_accepted_solution from existing thread_data JSON without re-scraping"""
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        import json
+        
+        logger.info("🔍 Checking for posts with thread_data...")
+        
+        updated_count = 0
+        posts_with_thread_data = 0
+        posts_with_solutions = 0
+        
+        with get_session() as db:
+            # Find posts with thread_data
+            all_posts = db.query(PostDB).all()
+            
+            for post in all_posts:
+                if post.thread_data:
+                    posts_with_thread_data += 1
+                    try:
+                        # Parse the JSON thread_data
+                        thread_data = json.loads(post.thread_data)
+                        
+                        # Extract solution info
+                        has_solution = thread_data.get('has_accepted_solution', False)
+                        total_replies = thread_data.get('total_replies', 0)
+                        
+                        # Update the post if it has a solution but field not set
+                        if has_solution and not post.has_accepted_solution:
+                            post.has_accepted_solution = True
+                            post.total_replies = total_replies
+                            updated_count += 1
+                            logger.info(f"✅ Updated post {post.id}: has_accepted_solution = True")
+                        
+                        if has_solution:
+                            posts_with_solutions += 1
+                            
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to parse thread_data for post {post.id}")
+                        continue
+            
+            db.commit()
+            logger.info(f"✅ Extraction complete! Updated {updated_count} posts")
+        
+        return {
+            "success": True,
+            "message": f"Extracted solution data from existing thread_data",
+            "stats": {
+                "total_posts": len(all_posts),
+                "posts_with_thread_data": posts_with_thread_data,
+                "posts_with_solutions_in_json": posts_with_solutions,
+                "posts_updated": updated_count
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to extract solutions from thread_data: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
