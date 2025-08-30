@@ -197,99 +197,100 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                             
                                             json_str = script_content[start_bracket:end_pos]
                                             
-                                                try:
-                                                    data = json.loads(json_str)
-                                                    logger.info(f"Found itemsArr with {len(data)} items")
-                                                    
-                                                    for item in data:
-                                                if isinstance(item, dict):
-                                                    # Extract fields using actual Atlassian structure
-                                                    title = item.get('plainEnglishTitle') or item.get('title', '')
-                                                    filter_desc = item.get('filterDescription', '')
-                                                    quarter = item.get('customField1', '')
-                                                    
-                                                    # Skip empty entries
-                                                    if not title or len(title.strip()) < 5:
-                                                        continue
-                                                    
-                                                    # Clean HTML from description
-                                                    from bs4 import BeautifulSoup
-                                                    if filter_desc:
-                                                        desc_soup = BeautifulSoup(filter_desc, 'html.parser')
-                                                        description = desc_soup.get_text(strip=True)
-                                                    else:
-                                                        description = f"Details for {title}"
-                                                    
-                                                    # Extract status from customSorts or unsortedCategories
-                                                    status = 'upcoming'
-                                                    if 'customSorts' in item:
-                                                        item_status = item['customSorts'].get('status', '')
-                                                    else:
-                                                        # Look in unsortedCategories for status
-                                                        item_status = ''
-                                                        for cat in item.get('unsortedCategories', []):
-                                                            if 'status' in cat:
-                                                                item_status = cat['status']
-                                                                break
-                                                    
-                                                    # Map status to our format
-                                                    if 'released' in item_status.lower():
-                                                        status = 'released'
-                                                    elif 'coming soon' in item_status.lower():
-                                                        status = 'upcoming'
-                                                    elif 'future' in item_status.lower():
-                                                        status = 'planning'
-                                                    elif 'beta' in item_status.lower():
-                                                        status = 'beta'
-                                                    
-                                                    # Extract products from customSorts or text content
-                                                    products = []
-                                                    if 'customSorts' in item:
-                                                        selected_product = item['customSorts'].get('selectedProduct', '')
-                                                        if 'jsw' in selected_product:
-                                                            products.append('jira')
-                                                        elif 'jsm' in selected_product:
-                                                            products.append('jsm')
-                                                        elif 'confluence' in selected_product:
-                                                            products.append('confluence')
-                                                        elif 'bitbucket' in selected_product:
-                                                            products.append('bitbucket')
-                                                    
-                                                    # Fallback product detection from content
-                                                    if not products:
-                                                        content_text = (title + ' ' + description).lower()
-                                                        if 'jira service' in content_text or 'jsm' in content_text:
-                                                            products.append('jsm')
-                                                        elif 'jira' in content_text:
-                                                            products.append('jira')
-                                                        if 'confluence' in content_text:
-                                                            products.append('confluence')
-                                                        if 'bitbucket' in content_text:
-                                                            products.append('bitbucket')
-                                                        if not products:
-                                                            products = ['jira']
-                                                    
-                                                    # Clean quarter
-                                                    clean_quarter = quarter.strip() if quarter else 'Q1 2025'
-                                                    
-                                                    features.append({
-                                                        'title': title.strip()[:200],
-                                                        'description': description[:500],
-                                                        'status': status,
-                                                        'quarter': clean_quarter,
-                                                        'products': products
-                                                    })
-                                                    
-                                                    if len(features) >= 20:
-                                                        break
-                                            
-                                            if len(features) > 0:
-                                                logger.info(f"Successfully extracted {len(features)} REAL roadmap features from itemsArr")
-                                                break
+                                            try:
+                                                data = json.loads(json_str)
+                                                logger.info(f"Found itemsArr with {len(data)} items")
                                                 
-                                        except (json.JSONDecodeError, KeyError, TypeError) as e:
-                                            logger.warning(f"Error parsing itemsArr: {e}")
-                                            continue
+                                                for item in data:
+                                                    if isinstance(item, dict):
+                                                        # Extract fields using actual Atlassian structure
+                                                        title = item.get('plainEnglishTitle') or item.get('title', '')
+                                                        filter_desc = item.get('filterDescription', '')
+                                                        quarter = item.get('customField1', '')
+                                                    
+                                                        
+                                                        # Skip empty entries
+                                                        if not title or len(title.strip()) < 5:
+                                                            continue
+                                                        
+                                                        # Clean HTML from description
+                                                        from bs4 import BeautifulSoup
+                                                        if filter_desc:
+                                                            desc_soup = BeautifulSoup(filter_desc, 'html.parser')
+                                                            description = desc_soup.get_text(strip=True)
+                                                        else:
+                                                            description = f"Details for {title}"
+                                                        
+                                                        # Extract status from customSorts or unsortedCategories
+                                                        status = 'upcoming'
+                                                        if 'customSorts' in item:
+                                                            item_status = item['customSorts'].get('status', '')
+                                                        else:
+                                                            # Look in unsortedCategories for status
+                                                            item_status = ''
+                                                            for cat in item.get('unsortedCategories', []):
+                                                                if 'status' in cat:
+                                                                    item_status = cat['status']
+                                                                    break
+                                                        
+                                                        # Map status to our format
+                                                        if 'released' in item_status.lower():
+                                                            status = 'released'
+                                                        elif 'coming soon' in item_status.lower():
+                                                            status = 'upcoming'
+                                                        elif 'future' in item_status.lower():
+                                                            status = 'planning'
+                                                        elif 'beta' in item_status.lower():
+                                                            status = 'beta'
+                                                        
+                                                        # Extract products from customSorts or text content
+                                                        products = []
+                                                        if 'customSorts' in item:
+                                                            selected_product = item['customSorts'].get('selectedProduct', '')
+                                                            if 'jsw' in selected_product:
+                                                                products.append('jira')
+                                                            elif 'jsm' in selected_product:
+                                                                products.append('jsm')
+                                                            elif 'confluence' in selected_product:
+                                                                products.append('confluence')
+                                                            elif 'bitbucket' in selected_product:
+                                                                products.append('bitbucket')
+                                                        
+                                                        # Fallback product detection from content
+                                                        if not products:
+                                                            content_text = (title + ' ' + description).lower()
+                                                            if 'jira service' in content_text or 'jsm' in content_text:
+                                                                products.append('jsm')
+                                                            elif 'jira' in content_text:
+                                                                products.append('jira')
+                                                            if 'confluence' in content_text:
+                                                                products.append('confluence')
+                                                            if 'bitbucket' in content_text:
+                                                                products.append('bitbucket')
+                                                            if not products:
+                                                                products = ['jira']
+                                                        
+                                                        # Clean quarter
+                                                        clean_quarter = quarter.strip() if quarter else 'Q1 2025'
+                                                        
+                                                        features.append({
+                                                            'title': title.strip()[:200],
+                                                            'description': description[:500],
+                                                            'status': status,
+                                                            'quarter': clean_quarter,
+                                                            'products': products
+                                                        })
+                                                        
+                                                        if len(features) >= 20:
+                                                            break
+                                                
+                                                if len(features) > 0:
+                                                    logger.info(f"Successfully extracted {len(features)} REAL roadmap features from itemsArr")
+                                                    break
+                                                    
+                                            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                                                logger.warning(f"Error parsing itemsArr: {e}")
+                                                continue
                                 
                                 # If we found real features, stop processing scripts
                                 if len(features) > 0:
