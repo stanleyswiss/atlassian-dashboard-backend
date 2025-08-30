@@ -117,114 +117,184 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                     
                     features = []
                     
-                    # Try multiple selectors for roadmap items
-                    # Based on typical Atlassian page structure
-                    selectors = [
-                        # Common patterns for roadmap cards
-                        ('div[class*="roadmap-item"]', 'class'),
-                        ('div[class*="feature-card"]', 'class'),
-                        ('article[class*="roadmap"]', 'class'),
-                        ('div[class*="timeline-item"]', 'class'),
-                        # Table-based roadmaps
-                        ('table.roadmap-table tr', 'tag'),
-                        ('tbody tr[class*="roadmap"]', 'class'),
-                        # List-based roadmaps
-                        ('ul.roadmap-list li', 'tag'),
-                        ('div.roadmap-content > div', 'tag'),
-                        # Generic card patterns
-                        ('div.card', 'tag'),
-                        ('div[data-testid*="roadmap"]', 'attr'),
+                    # Atlassian-specific selectors based on actual page structure
+                    roadmap_items = []
+                    
+                    # Try the specific selectors for Atlassian roadmap pages
+                    specific_selectors = [
+                        '.component--filter-sort-search .right-items .all-items .pi.search-grid .inner',
+                        '.pi.search-grid .inner',
+                        '.search-grid .inner',
+                        '.all-items .inner',
+                        '.pi .inner'
                     ]
                     
-                    roadmap_items = []
-                    for selector, selector_type in selectors:
-                        if selector_type == 'class':
-                            items = soup.select(selector)
-                        elif selector_type == 'attr':
-                            items = soup.select(selector)
-                        else:
-                            items = soup.select(selector)
-                        
+                    for selector in specific_selectors:
+                        items = soup.select(selector)
                         if items:
+                            logger.info(f"Found {len(items)} items with selector: {selector}")
                             roadmap_items.extend(items)
-                            if len(roadmap_items) >= 10:
-                                break
+                            break
                     
-                    # If no specific roadmap items found, try more generic approach
+                    # If specific selectors don't work, try broader patterns
                     if not roadmap_items:
-                        # Look for sections containing roadmap content
-                        sections = soup.find_all(['section', 'div'], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['roadmap', 'timeline', 'features', 'releases']))
-                        for section in sections[:5]:
-                            items = section.find_all(['div', 'article', 'li'], recursive=True)[:10]
-                            roadmap_items.extend(items)
+                        broader_selectors = [
+                            '.inner',  # Very common class on Atlassian pages
+                            'div[class*="card"]',
+                            'div[class*="item"]',
+                            'div[class*="feature"]',
+                            'div[class*="pi"]'
+                        ]
+                        
+                        for selector in broader_selectors:
+                            items = soup.select(selector)
+                            if items:
+                                # Filter items that likely contain roadmap content
+                                filtered_items = []
+                                for item in items:
+                                    text = item.get_text().lower()
+                                    if any(keyword in text for keyword in ['q1', 'q2', 'q3', 'q4', 'quarter', 'released', 'coming soon', 'development', 'jira', 'confluence']):
+                                        filtered_items.append(item)
+                                
+                                if filtered_items:
+                                    logger.info(f"Found {len(filtered_items)} filtered items with selector: {selector}")
+                                    roadmap_items.extend(filtered_items[:15])  # Limit to 15
+                                    break
+                    
+                    # If still no items, try to find JSON data in script tags
+                    if not roadmap_items:
+                        script_tags = soup.find_all('script')
+                        for script in script_tags:
+                            if script.string and ('roadmap' in script.string.lower() or 'features' in script.string.lower()):
+                                # Try to extract JSON data (simplified approach)
+                                script_content = script.string
+                                # Look for feature-like data structures
+                                import re
+                                json_matches = re.findall(r'\{[^}]*"title"[^}]*\}', script_content)
+                                if json_matches:
+                                    logger.info(f"Found {len(json_matches)} potential features in JSON")
+                                    # Create mock elements for JSON data
+                                    for match in json_matches[:10]:
+                                        mock_div = soup.new_tag('div')
+                                        mock_div.string = match
+                                        roadmap_items.append(mock_div)
                     
                     # Parse found items
                     seen_titles = set()
                     for item in roadmap_items[:30]:  # Process up to 30 items
-                        # Extract title
-                        title_elem = item.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b'])
+                        # Extract title using Atlassian-specific selectors first
+                        title_elem = item.find('h3', class_='title')  # Atlassian specific
+                        if not title_elem:
+                            title_elem = item.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b'])
                         if not title_elem:
                             title_elem = item.find(class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['title', 'name', 'heading']))
                         
                         title = title_elem.get_text(strip=True) if title_elem else ''
                         
-                        # Skip if no title or duplicate
-                        if not title or title in seen_titles:
+                        # Try to extract title from JSON-like content
+                        if not title and item.string:
+                            import re
+                            title_match = re.search(r'"title"\s*:\s*"([^"]+)"', item.string)
+                            if title_match:
+                                title = title_match.group(1)
+                        
+                        # Skip if no title or duplicate or too short
+                        if not title or len(title) < 3 or title in seen_titles:
                             continue
                         seen_titles.add(title)
                         
-                        # Extract description
-                        desc_elem = item.find(['p', 'span', 'div'], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['description', 'summary', 'content', 'text']))
+                        # Extract description using Atlassian-specific selectors
+                        desc_elem = item.find(class_='description')  # Atlassian specific
+                        if not desc_elem:
+                            desc_elem = item.find(['p', 'span', 'div'], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['description', 'summary', 'content', 'text']))
                         if not desc_elem:
                             desc_elem = item.find('p')
+                        
                         description = desc_elem.get_text(strip=True) if desc_elem else ''
                         
-                        # Extract status
+                        # Try to extract description from JSON-like content
+                        if not description and item.string:
+                            import re
+                            desc_match = re.search(r'"(?:description|filterDescription)"\s*:\s*"([^"]+)"', item.string)
+                            if desc_match:
+                                description = desc_match.group(1)
+                        
+                        # Extract status using Atlassian-specific classes
                         status = 'upcoming'
-                        status_elem = item.find(class_=lambda x: x and 'status' in str(x).lower())
-                        if status_elem:
-                            status_text = status_elem.get_text(strip=True).lower()
-                            if 'released' in status_text or 'available' in status_text or 'shipped' in status_text:
+                        status_classes = ['custom-released', 'custom-comingsoon', 'custom-future']
+                        for status_class in status_classes:
+                            if item.find(class_=status_class):
+                                if 'released' in status_class:
+                                    status = 'released'
+                                elif 'comingsoon' in status_class:
+                                    status = 'upcoming'
+                                elif 'future' in status_class:
+                                    status = 'planning'
+                                break
+                        
+                        # Fallback status detection
+                        if status == 'upcoming':
+                            item_text = item.get_text().lower()
+                            if 'released' in item_text or 'available' in item_text or 'shipped' in item_text:
                                 status = 'released'
-                            elif 'development' in status_text or 'progress' in status_text:
+                            elif 'development' in item_text or 'progress' in item_text:
                                 status = 'in_development'
-                            elif 'beta' in status_text:
+                            elif 'beta' in item_text:
                                 status = 'beta'
-                            elif 'planning' in status_text or 'planned' in status_text:
+                            elif 'planning' in item_text or 'planned' in item_text:
                                 status = 'planning'
                         
-                        # Extract quarter/timeline
+                        # Extract quarter/timeline using Atlassian-specific selector
                         quarter = 'Q1 2025'
-                        timeline_elem = item.find(class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['quarter', 'timeline', 'date', 'when']))
+                        timeline_elem = item.find(class_='custom-field-1')  # Atlassian specific
                         if timeline_elem:
                             timeline_text = timeline_elem.get_text(strip=True)
                             if 'Q' in timeline_text:
                                 quarter = timeline_text
+                        else:
+                            # Try JSON extraction
+                            if item.string:
+                                import re
+                                quarter_match = re.search(r'"customField1"\s*:\s*"([^"]*Q[^"]*)"', item.string)
+                                if quarter_match:
+                                    quarter = quarter_match.group(1)
                         
-                        # Extract products
+                        # Extract products using Atlassian-specific selectors
                         products = []
-                        product_text = (title + ' ' + description).lower()
-                        if 'jira' in product_text:
-                            products.append('jira')
-                        if 'confluence' in product_text:
-                            products.append('confluence')
-                        if 'bitbucket' in product_text:
-                            products.append('bitbucket')
-                        if 'jsm' in product_text or 'service management' in product_text:
-                            products.append('jsm')
+                        product_elem = item.find(class_='custom-category-all')
+                        if product_elem:
+                            product_spans = product_elem.find_all('span')
+                            for span in product_spans:
+                                product_name = span.get_text(strip=True).lower()
+                                if any(p in product_name for p in ['jira', 'confluence', 'bitbucket', 'jsm']):
+                                    products.append(product_name)
+                        
+                        # Fallback product detection
                         if not products:
-                            products = ['jira', 'confluence']  # Default
+                            product_text = (title + ' ' + description).lower()
+                            if 'jira' in product_text:
+                                products.append('jira')
+                            if 'confluence' in product_text:
+                                products.append('confluence')
+                            if 'bitbucket' in product_text:
+                                products.append('bitbucket')
+                            if 'jsm' in product_text or 'service management' in product_text:
+                                products.append('jsm')
+                            if not products:
+                                products = ['jira', 'confluence']  # Default
                         
-                        features.append({
-                            'title': title[:200],  # Limit title length
-                            'description': description[:500],  # Limit description length
-                            'status': status,
-                            'quarter': quarter,
-                            'products': products
-                        })
-                        
-                        if len(features) >= 15:  # Limit to 15 features
-                            break
+                        # Only add if we have meaningful content
+                        if len(title) > 3:
+                            features.append({
+                                'title': title[:200],  # Limit title length
+                                'description': description[:500] if description else f"Feature details for {title}",
+                                'status': status,
+                                'quarter': quarter,
+                                'products': products
+                            })
+                            
+                            if len(features) >= 15:  # Limit to 15 features
+                                break
                     
                     # If still no features found, return sample data
                     if not features:
