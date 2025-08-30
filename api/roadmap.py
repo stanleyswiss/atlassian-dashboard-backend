@@ -215,8 +215,8 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                         quarter = item.get('customField1', '')
                                                     
                                                         
-                                                        # Skip empty entries
-                                                        if not title or len(title.strip()) < 5:
+                                                        # Skip empty entries and garbage data
+                                                        if not title or len(title.strip()) < 5 or 'Results' in title or title.isdigit():
                                                             continue
                                                         
                                                         # Clean HTML from description
@@ -226,16 +226,26 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                         else:
                                                             description = f"Details for {title}"
                                                         
-                                                        # Extract status from customSorts or unsortedCategories
+                                                        # Extract status - try multiple fields
                                                         status = 'upcoming'
+                                                        item_status = ''
+                                                        
+                                                        # Try customSorts first
                                                         if 'customSorts' in item:
                                                             item_status = item['customSorts'].get('status', '')
-                                                        else:
-                                                            # Look in unsortedCategories for status
-                                                            item_status = ''
+                                                        
+                                                        # Try direct status field
+                                                        if not item_status:
+                                                            item_status = item.get('status', '')
+                                                        
+                                                        # Try unsortedCategories
+                                                        if not item_status:
                                                             for cat in item.get('unsortedCategories', []):
-                                                                if 'status' in cat:
+                                                                if isinstance(cat, dict) and 'status' in cat:
                                                                     item_status = cat['status']
+                                                                    break
+                                                                elif isinstance(cat, str) and any(s in cat.lower() for s in ['released', 'coming', 'future']):
+                                                                    item_status = cat
                                                                     break
                                                         
                                                         # Map status to our format
@@ -248,18 +258,44 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                         elif 'beta' in item_status.lower():
                                                             status = 'beta'
                                                         
-                                                        # Extract products from customSorts or text content
+                                                        # Extract products - try multiple approaches
                                                         products = []
+                                                        
+                                                        # Try customSorts first
                                                         if 'customSorts' in item:
                                                             selected_product = item['customSorts'].get('selectedProduct', '')
-                                                            if 'jsw' in selected_product:
+                                                            if 'jsw' in selected_product.lower():
                                                                 products.append('jira')
-                                                            elif 'jsm' in selected_product:
-                                                                products.append('jsm')
-                                                            elif 'confluence' in selected_product:
+                                                            elif 'jsm' in selected_product.lower():
+                                                                products.append('jsm')  
+                                                            elif 'confluence' in selected_product.lower():
                                                                 products.append('confluence')
-                                                            elif 'bitbucket' in selected_product:
+                                                            elif 'bitbucket' in selected_product.lower():
                                                                 products.append('bitbucket')
+                                                        
+                                                        # Try direct product field
+                                                        if not products and 'product' in item:
+                                                            product = item['product'].lower()
+                                                            if 'jira' in product:
+                                                                products.append('jira')
+                                                            if 'confluence' in product:
+                                                                products.append('confluence') 
+                                                            if 'bitbucket' in product:
+                                                                products.append('bitbucket')
+                                                            if 'jsm' in product or 'service' in product:
+                                                                products.append('jsm')
+                                                        
+                                                        # Try category field for products
+                                                        if not products and 'category' in item:
+                                                            category = item['category'].lower()
+                                                            if 'jira' in category:
+                                                                products.append('jira')
+                                                            if 'confluence' in category:
+                                                                products.append('confluence')
+                                                            if 'bitbucket' in category:
+                                                                products.append('bitbucket')
+                                                            if 'service' in category:
+                                                                products.append('jsm')
                                                         
                                                         # Fallback product detection from content
                                                         if not products:
@@ -275,8 +311,23 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                             if not products:
                                                                 products = ['jira']
                                                         
-                                                        # Clean quarter
-                                                        clean_quarter = quarter.strip() if quarter else 'Q1 2025'
+                                                        # Clean and validate quarter
+                                                        clean_quarter = 'Q1 2025'  # Default
+                                                        if quarter and quarter.strip():
+                                                            q_text = quarter.strip()
+                                                            # Validate quarter format (Q1-Q4 + year)
+                                                            import re
+                                                            if re.match(r'^Q[1-4]\s+\d{4}$', q_text):
+                                                                clean_quarter = q_text
+                                                            elif re.match(r'^Q[1-4]\d{4}$', q_text):
+                                                                # Add space if missing (Q12024 -> Q1 2024)  
+                                                                clean_quarter = f"{q_text[:2]} {q_text[2:]}"
+                                                            else:
+                                                                # Try to extract year and quarter from text
+                                                                year_match = re.search(r'\b(20\d{2})\b', q_text)
+                                                                q_match = re.search(r'\bQ([1-4])\b', q_text)
+                                                                if year_match and q_match:
+                                                                    clean_quarter = f"Q{q_match.group(1)} {year_match.group(1)}"
                                                         
                                                         features.append({
                                                             'title': title.strip()[:200],
@@ -286,7 +337,8 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                             'products': products
                                                         })
                                                         
-                                                        if len(features) >= 20:
+                                                        # Remove hard limit - get all features
+                                                        if len(features) >= 200:  # Reasonable safety limit
                                                             break
                                                 
                                                 if len(features) > 0:
@@ -415,7 +467,7 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                 'products': products
                             })
                             
-                            if len(features) >= 15:  # Limit to 15 features
+                            if len(features) >= 100:  # Reasonable limit for DOM fallback
                                 break
                     
                     # Only use fallback if we have absolutely no real features
