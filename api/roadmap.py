@@ -248,15 +248,23 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                                     item_status = cat
                                                                     break
                                                         
-                                                        # Map status to our format
-                                                        if 'released' in item_status.lower():
+                                                        # Map status to our format with more patterns
+                                                        item_status_lower = item_status.lower()
+                                                        if 'released' in item_status_lower or 'shipped' in item_status_lower:
                                                             status = 'released'
-                                                        elif 'coming soon' in item_status.lower():
+                                                        elif ('coming soon' in item_status_lower or 
+                                                              'upcoming' in item_status_lower or 
+                                                              'in development' in item_status_lower):
                                                             status = 'upcoming'
-                                                        elif 'future' in item_status.lower():
-                                                            status = 'planning'
-                                                        elif 'beta' in item_status.lower():
+                                                        elif ('future' in item_status_lower or 
+                                                              'planned' in item_status_lower or
+                                                              'planning' in item_status_lower):
+                                                            status = 'planned'
+                                                        elif 'beta' in item_status_lower or 'eap' in item_status_lower:
                                                             status = 'beta'
+                                                        else:
+                                                            # Default to upcoming for non-released items
+                                                            status = 'upcoming'
                                                         
                                                         # Extract products - try multiple approaches
                                                         products = []
