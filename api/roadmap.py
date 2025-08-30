@@ -161,23 +161,139 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                     roadmap_items.extend(filtered_items[:15])  # Limit to 15
                                     break
                     
-                    # If still no items, try to find JSON data in script tags
-                    if not roadmap_items:
+                    # Extract JSON data from script tags - this is where the REAL roadmap data is
+                    if not roadmap_items or len(features) == 0:
                         script_tags = soup.find_all('script')
                         for script in script_tags:
-                            if script.string and ('roadmap' in script.string.lower() or 'features' in script.string.lower()):
-                                # Try to extract JSON data (simplified approach)
+                            if script.string:
                                 script_content = script.string
-                                # Look for feature-like data structures
+                                
+                                # Look for the roadmap data array in JavaScript
                                 import re
-                                json_matches = re.findall(r'\{[^}]*"title"[^}]*\}', script_content)
-                                if json_matches:
-                                    logger.info(f"Found {len(json_matches)} potential features in JSON")
-                                    # Create mock elements for JSON data
-                                    for match in json_matches[:10]:
-                                        mock_div = soup.new_tag('div')
-                                        mock_div.string = match
-                                        roadmap_items.append(mock_div)
+                                import json
+                                
+                                # Look specifically for the itemsArr array that contains roadmap data
+                                if 'itemsArr' in script_content:
+                                    logger.info("Found script with itemsArr - extracting real roadmap data")
+                                    
+                                    # Find itemsArr and extract it properly with bracket counting
+                                    itemsarr_pos = script_content.find('"itemsArr":')
+                                    if itemsarr_pos != -1:
+                                        # Find the start of the array
+                                        start_bracket = script_content.find('[', itemsarr_pos)
+                                        if start_bracket != -1:
+                                            # Count brackets to find the end
+                                            bracket_count = 0
+                                            end_pos = start_bracket
+                                            
+                                            for i, char in enumerate(script_content[start_bracket:], start_bracket):
+                                                if char == '[':
+                                                    bracket_count += 1
+                                                elif char == ']':
+                                                    bracket_count -= 1
+                                                    if bracket_count == 0:
+                                                        end_pos = i + 1
+                                                        break
+                                            
+                                            json_str = script_content[start_bracket:end_pos]
+                                            
+                                                try:
+                                                    data = json.loads(json_str)
+                                                    logger.info(f"Found itemsArr with {len(data)} items")
+                                                    
+                                                    for item in data:
+                                                if isinstance(item, dict):
+                                                    # Extract fields using actual Atlassian structure
+                                                    title = item.get('plainEnglishTitle') or item.get('title', '')
+                                                    filter_desc = item.get('filterDescription', '')
+                                                    quarter = item.get('customField1', '')
+                                                    
+                                                    # Skip empty entries
+                                                    if not title or len(title.strip()) < 5:
+                                                        continue
+                                                    
+                                                    # Clean HTML from description
+                                                    from bs4 import BeautifulSoup
+                                                    if filter_desc:
+                                                        desc_soup = BeautifulSoup(filter_desc, 'html.parser')
+                                                        description = desc_soup.get_text(strip=True)
+                                                    else:
+                                                        description = f"Details for {title}"
+                                                    
+                                                    # Extract status from customSorts or unsortedCategories
+                                                    status = 'upcoming'
+                                                    if 'customSorts' in item:
+                                                        item_status = item['customSorts'].get('status', '')
+                                                    else:
+                                                        # Look in unsortedCategories for status
+                                                        item_status = ''
+                                                        for cat in item.get('unsortedCategories', []):
+                                                            if 'status' in cat:
+                                                                item_status = cat['status']
+                                                                break
+                                                    
+                                                    # Map status to our format
+                                                    if 'released' in item_status.lower():
+                                                        status = 'released'
+                                                    elif 'coming soon' in item_status.lower():
+                                                        status = 'upcoming'
+                                                    elif 'future' in item_status.lower():
+                                                        status = 'planning'
+                                                    elif 'beta' in item_status.lower():
+                                                        status = 'beta'
+                                                    
+                                                    # Extract products from customSorts or text content
+                                                    products = []
+                                                    if 'customSorts' in item:
+                                                        selected_product = item['customSorts'].get('selectedProduct', '')
+                                                        if 'jsw' in selected_product:
+                                                            products.append('jira')
+                                                        elif 'jsm' in selected_product:
+                                                            products.append('jsm')
+                                                        elif 'confluence' in selected_product:
+                                                            products.append('confluence')
+                                                        elif 'bitbucket' in selected_product:
+                                                            products.append('bitbucket')
+                                                    
+                                                    # Fallback product detection from content
+                                                    if not products:
+                                                        content_text = (title + ' ' + description).lower()
+                                                        if 'jira service' in content_text or 'jsm' in content_text:
+                                                            products.append('jsm')
+                                                        elif 'jira' in content_text:
+                                                            products.append('jira')
+                                                        if 'confluence' in content_text:
+                                                            products.append('confluence')
+                                                        if 'bitbucket' in content_text:
+                                                            products.append('bitbucket')
+                                                        if not products:
+                                                            products = ['jira']
+                                                    
+                                                    # Clean quarter
+                                                    clean_quarter = quarter.strip() if quarter else 'Q1 2025'
+                                                    
+                                                    features.append({
+                                                        'title': title.strip()[:200],
+                                                        'description': description[:500],
+                                                        'status': status,
+                                                        'quarter': clean_quarter,
+                                                        'products': products
+                                                    })
+                                                    
+                                                    if len(features) >= 20:
+                                                        break
+                                            
+                                            if len(features) > 0:
+                                                logger.info(f"Successfully extracted {len(features)} REAL roadmap features from itemsArr")
+                                                break
+                                                
+                                        except (json.JSONDecodeError, KeyError, TypeError) as e:
+                                            logger.warning(f"Error parsing itemsArr: {e}")
+                                            continue
+                                
+                                # If we found real features, stop processing scripts
+                                if len(features) > 0:
+                                    break
                     
                     # Parse found items
                     seen_titles = set()
@@ -296,15 +412,17 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                             if len(features) >= 15:  # Limit to 15 features
                                 break
                     
-                    # If still no features found, return sample data
+                    # Only use fallback if we have absolutely no real features
                     if not features:
-                        logger.info(f"No features found via scraping for {url}, using fallback data")
+                        logger.warning(f"No real roadmap features extracted from {url}, using fallback data")
                         return get_fallback_scrape_data()
                     
+                    logger.info(f"Successfully extracted {len(features)} real roadmap features from {url}")
                     return {
                         'success': True,
                         'features': features,
-                        'scraped_at': datetime.now().isoformat()
+                        'scraped_at': datetime.now().isoformat(),
+                        'source': 'real_data'
                     }
                 else:
                     logger.warning(f"Failed to fetch roadmap from {url}, status: {response.status}")
