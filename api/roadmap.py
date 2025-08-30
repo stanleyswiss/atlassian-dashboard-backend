@@ -32,8 +32,11 @@ async def get_cloud_roadmap():
                 "url": "https://www.atlassian.com/roadmap/cloud"
             }
         else:
-            # Fallback data
-            return get_fallback_roadmap_data('Cloud')
+            # Log why scraping failed and return fallback data
+            logger.warning(f"Cloud roadmap scraping failed: {roadmap_data.get('error', 'Unknown error')}")
+            fallback_data = get_fallback_roadmap_data('Cloud')
+            fallback_data['scrape_error'] = roadmap_data.get('error', 'Unknown error')
+            return fallback_data
             
     except Exception as e:
         logger.error(f"Error getting Cloud roadmap: {e}")
@@ -60,8 +63,11 @@ async def get_data_center_roadmap():
                 "url": "https://www.atlassian.com/roadmap/data-center"
             }
         else:
-            # Fallback data
-            return get_fallback_roadmap_data('Data Center')
+            # Log why scraping failed and return fallback data
+            logger.warning(f"Data Center roadmap scraping failed: {roadmap_data.get('error', 'Unknown error')}")
+            fallback_data = get_fallback_roadmap_data('Data Center')
+            fallback_data['scrape_error'] = roadmap_data.get('error', 'Unknown error')
+            return fallback_data
             
     except Exception as e:
         logger.error(f"Error getting Data Center roadmap: {e}")
@@ -416,7 +422,7 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                     # Only use fallback if we have absolutely no real features
                     if not features:
                         logger.warning(f"No real roadmap features extracted from {url}, using fallback data")
-                        return get_fallback_scrape_data()
+                        return {'success': False, 'error': 'No features extracted from real data'}
                     
                     logger.info(f"Successfully extracted {len(features)} real roadmap features from {url}")
                     return {
@@ -427,11 +433,11 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                     }
                 else:
                     logger.warning(f"Failed to fetch roadmap from {url}, status: {response.status}")
-                    return get_fallback_scrape_data()
+                    return {'success': False, 'error': f'HTTP {response.status} error'}
                     
     except Exception as e:
         logger.error(f"Error scraping roadmap from {url}: {e}")
-        return get_fallback_scrape_data()
+        return {'success': False, 'error': str(e)}
 
 def get_fallback_scrape_data() -> Dict[str, Any]:
     """
