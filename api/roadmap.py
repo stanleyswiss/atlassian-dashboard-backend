@@ -248,171 +248,170 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                 title = item.get('plainEnglishTitle') or item.get('title', '')
                                                 filter_desc = item.get('filterDescription', '')
                                                 quarter = item.get('customField1', '')
-                                                    
-                                                        
+                                                
                                                 # Skip empty entries and garbage data
                                                 if not title or len(title.strip()) < 5 or 'Results' in title or title.isdigit():
                                                     continue
-                                                        
-                                                        # Clean HTML from description
-                                                        if filter_desc:
-                                                            desc_soup = BeautifulSoup(filter_desc, 'html.parser')
-                                                            description = desc_soup.get_text(strip=True)
-                                                        else:
-                                                            description = f"Details for {title}"
-                                                        
-                                                        # Extract status - try multiple fields
-                                                        status = 'upcoming'
-                                                        item_status = ''
-                                                        
-                                                        # Try customSorts first
-                                                        if 'customSorts' in item:
-                                                            item_status = item['customSorts'].get('status', '')
-                                                        
-                                                        # Try direct status field
-                                                        if not item_status:
-                                                            item_status = item.get('status', '')
-                                                        
-                                                        # Try unsortedCategories
-                                                        if not item_status:
-                                                            for cat in item.get('unsortedCategories', []):
-                                                                if isinstance(cat, dict) and 'status' in cat:
-                                                                    item_status = cat['status']
-                                                                    break
-                                                                elif isinstance(cat, str) and any(s in cat.lower() for s in ['released', 'coming', 'future']):
-                                                                    item_status = cat
-                                                                    break
-                                                        
-                                                        # Enhanced status mapping for ALL roadmap types including FUTURE
-                                                        item_status_lower = item_status.lower().strip()
-                                                        
-                                                        # FUTURE items (2026-2027) - CRITICAL for missing items
-                                                        if ('future' in item_status_lower):
-                                                            status = 'planned'
-                                                        # Released items
-                                                        elif ('released' in item_status_lower or 
-                                                              'shipped' in item_status_lower or
-                                                              'completed' in item_status_lower or
-                                                              'available' in item_status_lower):
-                                                            status = 'released'
-                                                        # Coming/Upcoming items  
-                                                        elif ('coming soon' in item_status_lower or 
-                                                              'upcoming' in item_status_lower or 
-                                                              'in development' in item_status_lower or
-                                                              'coming' in item_status_lower):
-                                                            status = 'upcoming'
-                                                        # Planned/Planning items
-                                                        elif ('planned' in item_status_lower or
-                                                              'planning' in item_status_lower or
-                                                              'roadmap' in item_status_lower):
-                                                            status = 'planned'
-                                                        # Beta/EAP items
-                                                        elif ('beta' in item_status_lower or 
-                                                              'eap' in item_status_lower or
-                                                              'early access' in item_status_lower):
-                                                            status = 'beta'
-                                                        else:
-                                                            # Check quarter for future items (2026+ = planned)
-                                                            quarter_text = (quarter or '').lower()
-                                                            if any(year in quarter_text for year in ['2026', '2027', '2028', '2029']):
-                                                                status = 'planned'  # FUTURE items
-                                                            else:
-                                                                status = 'upcoming'  # Default for unclear items
-                                                        
-                                                        # Extract products - try multiple approaches
-                                                        products = []
-                                                        
-                                                        # Try customSorts first
-                                                        if 'customSorts' in item:
-                                                            selected_product = item['customSorts'].get('selectedProduct', '')
-                                                            if 'jsw' in selected_product.lower():
-                                                                products.append('jira')
-                                                            elif 'jsm' in selected_product.lower():
-                                                                products.append('jsm')  
-                                                            elif 'confluence' in selected_product.lower():
-                                                                products.append('confluence')
-                                                            elif 'bitbucket' in selected_product.lower():
-                                                                products.append('bitbucket')
-                                                        
-                                                        # Try direct product field
-                                                        if not products and 'product' in item:
-                                                            product = item['product'].lower()
-                                                            if 'jira' in product:
-                                                                products.append('jira')
-                                                            if 'confluence' in product:
-                                                                products.append('confluence') 
-                                                            if 'bitbucket' in product:
-                                                                products.append('bitbucket')
-                                                            if 'jsm' in product or 'service' in product:
-                                                                products.append('jsm')
-                                                        
-                                                        # Try category field for products
-                                                        if not products and 'category' in item:
-                                                            category = item['category'].lower()
-                                                            if 'jira' in category:
-                                                                products.append('jira')
-                                                            if 'confluence' in category:
-                                                                products.append('confluence')
-                                                            if 'bitbucket' in category:
-                                                                products.append('bitbucket')
-                                                            if 'service' in category:
-                                                                products.append('jsm')
-                                                        
-                                                        # Fallback product detection from content
-                                                        if not products:
-                                                            content_text = (title + ' ' + description).lower()
-                                                            if 'jira service' in content_text or 'jsm' in content_text:
-                                                                products.append('jsm')
-                                                            elif 'jira' in content_text:
-                                                                products.append('jira')
-                                                            if 'confluence' in content_text:
-                                                                products.append('confluence')
-                                                            if 'bitbucket' in content_text:
-                                                                products.append('bitbucket')
-                                                            if not products:
-                                                                products = ['jira']
-                                                        
-                                                        # Enhanced quarter handling for regular AND future items
-                                                        clean_quarter = 'Q1 2025'  # Default
-                                                        if quarter and quarter.strip():
-                                                            q_text = quarter.strip()
-                                                            import re
-                                                            
-                                                            # Handle FUTURE years (2026, 2027, etc.) - CRITICAL for missing items
-                                                            if re.match(r'^(2026|2027|2028|2029|2030)$', q_text):
-                                                                clean_quarter = f"FUTURE {q_text}"
-                                                            # Standard quarter format (Q1-Q4 + year)
-                                                            elif re.match(r'^Q[1-4]\s+\d{4}$', q_text):
-                                                                clean_quarter = q_text
-                                                            elif re.match(r'^Q[1-4]\d{4}$', q_text):
-                                                                # Add space if missing (Q12024 -> Q1 2024)  
-                                                                clean_quarter = f"{q_text[:2]} {q_text[2:]}"
-                                                            else:
-                                                                # Try to extract year and quarter from text
-                                                                year_match = re.search(r'\b(20\d{2})\b', q_text)
-                                                                q_match = re.search(r'\bQ([1-4])\b', q_text)
-                                                                if year_match and q_match:
-                                                                    year = year_match.group(1)
-                                                                    # Handle future years specially
-                                                                    if int(year) >= 2026:
-                                                                        clean_quarter = f"FUTURE {year}"
-                                                                    else:
-                                                                        clean_quarter = f"Q{q_match.group(1)} {year}"
-                                                                elif year_match and int(year_match.group(1)) >= 2026:
-                                                                    clean_quarter = f"FUTURE {year_match.group(1)}"
-                                                        
-                                                        features.append({
-                                                            'title': title.strip()[:200],
-                                                            'description': description[:500],
-                                                            'status': status,
-                                                            'quarter': clean_quarter,
-                                                            'products': products
-                                                        })
-                                                        
-                                                        # No hard limit - get ALL features (expect ~446)
-                                                        if len(features) >= 500:  # Only prevent infinite loops
-                                                            logger.warning(f"Extracted unusually high number of features: {len(features)}")
+                                                
+                                                # Clean HTML from description
+                                                if filter_desc:
+                                                    desc_soup = BeautifulSoup(filter_desc, 'html.parser')
+                                                    description = desc_soup.get_text(strip=True)
+                                                else:
+                                                    description = f"Details for {title}"
+                                                
+                                                # Extract status - try multiple fields
+                                                status = 'upcoming'
+                                                item_status = ''
+                                                
+                                                # Try customSorts first
+                                                if 'customSorts' in item:
+                                                    item_status = item['customSorts'].get('status', '')
+                                                
+                                                # Try direct status field
+                                                if not item_status:
+                                                    item_status = item.get('status', '')
+                                                
+                                                # Try unsortedCategories
+                                                if not item_status:
+                                                    for cat in item.get('unsortedCategories', []):
+                                                        if isinstance(cat, dict) and 'status' in cat:
+                                                            item_status = cat['status']
                                                             break
+                                                        elif isinstance(cat, str) and any(s in cat.lower() for s in ['released', 'coming', 'future']):
+                                                            item_status = cat
+                                                            break
+                                                
+                                                # Enhanced status mapping for ALL roadmap types including FUTURE
+                                                item_status_lower = item_status.lower().strip()
+                                                
+                                                # FUTURE items (2026-2027) - CRITICAL for missing items
+                                                if ('future' in item_status_lower):
+                                                    status = 'planned'
+                                                # Released items
+                                                elif ('released' in item_status_lower or 
+                                                      'shipped' in item_status_lower or
+                                                      'completed' in item_status_lower or
+                                                      'available' in item_status_lower):
+                                                    status = 'released'
+                                                # Coming/Upcoming items  
+                                                elif ('coming soon' in item_status_lower or 
+                                                      'upcoming' in item_status_lower or 
+                                                      'in development' in item_status_lower or
+                                                      'coming' in item_status_lower):
+                                                    status = 'upcoming'
+                                                # Planned/Planning items
+                                                elif ('planned' in item_status_lower or
+                                                      'planning' in item_status_lower or
+                                                      'roadmap' in item_status_lower):
+                                                    status = 'planned'
+                                                # Beta/EAP items
+                                                elif ('beta' in item_status_lower or 
+                                                      'eap' in item_status_lower or
+                                                      'early access' in item_status_lower):
+                                                    status = 'beta'
+                                                else:
+                                                    # Check quarter for future items (2026+ = planned)
+                                                    quarter_text = (quarter or '').lower()
+                                                    if any(year in quarter_text for year in ['2026', '2027', '2028', '2029']):
+                                                        status = 'planned'  # FUTURE items
+                                                    else:
+                                                        status = 'upcoming'  # Default for unclear items
+                                                
+                                                # Extract products - try multiple approaches
+                                                products = []
+                                                
+                                                # Try customSorts first
+                                                if 'customSorts' in item:
+                                                    selected_product = item['customSorts'].get('selectedProduct', '')
+                                                    if 'jsw' in selected_product.lower():
+                                                        products.append('jira')
+                                                    elif 'jsm' in selected_product.lower():
+                                                        products.append('jsm')  
+                                                    elif 'confluence' in selected_product.lower():
+                                                        products.append('confluence')
+                                                    elif 'bitbucket' in selected_product.lower():
+                                                        products.append('bitbucket')
+                                                
+                                                # Try direct product field
+                                                if not products and 'product' in item:
+                                                    product = item['product'].lower()
+                                                    if 'jira' in product:
+                                                        products.append('jira')
+                                                    if 'confluence' in product:
+                                                        products.append('confluence') 
+                                                    if 'bitbucket' in product:
+                                                        products.append('bitbucket')
+                                                    if 'jsm' in product or 'service' in product:
+                                                        products.append('jsm')
+                                                
+                                                # Try category field for products
+                                                if not products and 'category' in item:
+                                                    category = item['category'].lower()
+                                                    if 'jira' in category:
+                                                        products.append('jira')
+                                                    if 'confluence' in category:
+                                                        products.append('confluence')
+                                                    if 'bitbucket' in category:
+                                                        products.append('bitbucket')
+                                                    if 'service' in category:
+                                                        products.append('jsm')
+                                                
+                                                # Fallback product detection from content
+                                                if not products:
+                                                    content_text = (title + ' ' + description).lower()
+                                                    if 'jira service' in content_text or 'jsm' in content_text:
+                                                        products.append('jsm')
+                                                    elif 'jira' in content_text:
+                                                        products.append('jira')
+                                                    if 'confluence' in content_text:
+                                                        products.append('confluence')
+                                                    if 'bitbucket' in content_text:
+                                                        products.append('bitbucket')
+                                                    if not products:
+                                                        products = ['jira']
+                                                
+                                                # Enhanced quarter handling for regular AND future items
+                                                clean_quarter = 'Q1 2025'  # Default
+                                                if quarter and quarter.strip():
+                                                    q_text = quarter.strip()
+                                                    import re
+                                                    
+                                                    # Handle FUTURE years (2026, 2027, etc.) - CRITICAL for missing items
+                                                    if re.match(r'^(2026|2027|2028|2029|2030)$', q_text):
+                                                        clean_quarter = f"FUTURE {q_text}"
+                                                    # Standard quarter format (Q1-Q4 + year)
+                                                    elif re.match(r'^Q[1-4]\s+\d{4}$', q_text):
+                                                        clean_quarter = q_text
+                                                    elif re.match(r'^Q[1-4]\d{4}$', q_text):
+                                                        # Add space if missing (Q12024 -> Q1 2024)  
+                                                        clean_quarter = f"{q_text[:2]} {q_text[2:]}"
+                                                    else:
+                                                        # Try to extract year and quarter from text
+                                                        year_match = re.search(r'\b(20\d{2})\b', q_text)
+                                                        q_match = re.search(r'\bQ([1-4])\b', q_text)
+                                                        if year_match and q_match:
+                                                            year = year_match.group(1)
+                                                            # Handle future years specially
+                                                            if int(year) >= 2026:
+                                                                clean_quarter = f"FUTURE {year}"
+                                                            else:
+                                                                clean_quarter = f"Q{q_match.group(1)} {year}"
+                                                        elif year_match and int(year_match.group(1)) >= 2026:
+                                                            clean_quarter = f"FUTURE {year_match.group(1)}"
+                                                
+                                                features.append({
+                                                    'title': title.strip()[:200],
+                                                    'description': description[:500],
+                                                    'status': status,
+                                                    'quarter': clean_quarter,
+                                                    'products': products
+                                                })
+                                                
+                                                # No hard limit - get ALL features (expect ~446)
+                                                if len(features) >= 500:  # Only prevent infinite loops
+                                                    logger.warning(f"Extracted unusually high number of features: {len(features)}")
+                                                    break
                                                 
                                         if len(features) > 0:
                                             logger.info(f"Successfully extracted {len(features)} REAL roadmap features from multiple sources")
