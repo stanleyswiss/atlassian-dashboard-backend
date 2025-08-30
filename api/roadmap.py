@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, List
+from fastapi import APIRouter, HTTPException, Query
+from typing import Dict, Any, List, Optional
 import logging
 import asyncio
 import aiohttp
@@ -7,12 +7,33 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import openai
 import os
+import hashlib
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/roadmap", tags=["roadmap"])
 
+# Simple in-memory cache for AI analysis results
+# In production, use Redis or database
+ai_analysis_cache = {}
+CACHE_DURATION_DAYS = 7  # Cache for 1 week
+
+def get_cache_key(features: List[Dict], platform: str) -> str:
+    """Generate a cache key based on features content and platform"""
+    # Create a hash of the features content to detect changes
+    content = f"{platform}_{len(features)}_" + "_".join([f.get('title', '') for f in features[:10]])
+    return hashlib.md5(content.encode()).hexdigest()
+
+def is_cache_valid(cache_entry: Dict) -> bool:
+    """Check if cache entry is still valid (within CACHE_DURATION_DAYS)"""
+    if not cache_entry or 'timestamp' not in cache_entry:
+        return False
+    
+    cache_time = datetime.fromisoformat(cache_entry['timestamp'])
+    now = datetime.now()
+    return (now - cache_time).days < CACHE_DURATION_DAYS
+
 @router.get("/cloud")
-async def get_cloud_roadmap():
+async def get_cloud_roadmap(force_refresh: bool = Query(False, description="Force refresh AI analysis cache")):
     """
     Get Atlassian Cloud roadmap with AI analysis
     """
@@ -20,8 +41,8 @@ async def get_cloud_roadmap():
         roadmap_data = await scrape_roadmap("https://www.atlassian.com/roadmap/cloud")
         
         if roadmap_data.get('success'):
-            # Add AI analysis
-            ai_analysis = await analyze_roadmap_with_ai(roadmap_data['features'], 'Cloud')
+            # Add AI analysis with caching
+            ai_analysis = await analyze_roadmap_with_ai(roadmap_data['features'], 'Cloud', force_refresh)
             
             return {
                 "success": True,
@@ -43,7 +64,7 @@ async def get_cloud_roadmap():
         return get_fallback_roadmap_data('Cloud')
 
 @router.get("/data-center")
-async def get_data_center_roadmap():
+async def get_data_center_roadmap(force_refresh: bool = Query(False, description="Force refresh AI analysis cache")):
     """
     Get Atlassian Data Center roadmap with AI analysis
     """
@@ -51,8 +72,8 @@ async def get_data_center_roadmap():
         roadmap_data = await scrape_roadmap("https://www.atlassian.com/roadmap/data-center")
         
         if roadmap_data.get('success'):
-            # Add AI analysis
-            ai_analysis = await analyze_roadmap_with_ai(roadmap_data['features'], 'Data Center')
+            # Add AI analysis with caching
+            ai_analysis = await analyze_roadmap_with_ai(roadmap_data['features'], 'Data Center', force_refresh)
             
             return {
                 "success": True,
@@ -73,15 +94,56 @@ async def get_data_center_roadmap():
         logger.error(f"Error getting Data Center roadmap: {e}")
         return get_fallback_roadmap_data('Data Center')
 
+@router.get("/cache-status")
+async def get_cache_status():
+    """
+    Get current cache status for AI analysis
+    """
+    cache_info = []
+    
+    for cache_key, cache_data in ai_analysis_cache.items():
+        if 'timestamp' in cache_data:
+            cache_time = datetime.fromisoformat(cache_data['timestamp'])
+            age_days = (datetime.now() - cache_time).days
+            is_valid = is_cache_valid(cache_data)
+            
+            cache_info.append({
+                "key": cache_key[:8] + "...",  # Shortened key for display
+                "age_days": age_days,
+                "is_valid": is_valid,
+                "created": cache_time.isoformat()
+            })
+    
+    return {
+        "cache_entries": len(ai_analysis_cache),
+        "cache_duration_days": CACHE_DURATION_DAYS,
+        "cache_info": cache_info
+    }
+
+@router.post("/refresh-cache")
+async def refresh_cache():
+    """
+    Clear AI analysis cache and force refresh on next request
+    """
+    global ai_analysis_cache
+    cache_count = len(ai_analysis_cache)
+    ai_analysis_cache.clear()
+    
+    return {
+        "success": True,
+        "message": f"Cleared {cache_count} cache entries. Next API calls will generate fresh AI analysis.",
+        "timestamp": datetime.now().isoformat()
+    }
+
 @router.get("/overview")
-async def get_roadmap_overview():
+async def get_roadmap_overview(force_refresh: bool = Query(False, description="Force refresh AI analysis cache")):
     """
     Get combined roadmap overview with comparative analysis
     """
     try:
-        # Get both roadmaps concurrently
-        cloud_task = get_cloud_roadmap()
-        dc_task = get_data_center_roadmap()
+        # Get both roadmaps concurrently with force_refresh parameter
+        cloud_task = get_cloud_roadmap(force_refresh)
+        dc_task = get_data_center_roadmap(force_refresh)
         
         cloud_roadmap, dc_roadmap = await asyncio.gather(cloud_task, dc_task)
         
@@ -709,11 +771,26 @@ def get_fallback_scrape_data() -> Dict[str, Any]:
         'is_fallback': True
     }
 
-async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[str, Any]:
+async def analyze_roadmap_with_ai(features: List[Dict], platform: str, force_refresh: bool = False) -> Dict[str, Any]:
     """
-    Analyze roadmap features using OpenAI for insights
+    Analyze roadmap features using OpenAI for insights with caching
     """
     try:
+        # Check cache first unless force refresh is requested
+        cache_key = get_cache_key(features, platform)
+        
+        if not force_refresh and cache_key in ai_analysis_cache:
+            cached_analysis = ai_analysis_cache[cache_key]
+            if is_cache_valid(cached_analysis):
+                logger.info(f"Using cached AI analysis for {platform} (cache age: {(datetime.now() - datetime.fromisoformat(cached_analysis['timestamp'])).days} days)")
+                cached_analysis['from_cache'] = True
+                return cached_analysis
+            else:
+                logger.info(f"Cache expired for {platform}, refreshing...")
+        elif force_refresh:
+            logger.info(f"Force refresh requested for {platform} AI analysis")
+        else:
+            logger.info(f"No cache found for {platform}, generating new AI analysis")
         openai_key = os.environ.get("OPENAI_API_KEY")
         if not openai_key:
             return get_fallback_ai_analysis(platform)
@@ -724,18 +801,37 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
             for feature in features[:5]  # Limit to 5 features to avoid token limits
         ])
         
+        # Separate features by status
+        released_features = [f for f in features if f.get('status', '').lower() in ['released', 'available', 'shipped']]
+        upcoming_features = [f for f in features if f.get('status', '').lower() in ['upcoming', 'in_development', 'planned']]
+        
+        released_text = "\n".join([
+            f"- {f.get('title', 'Untitled')}: {f.get('description', 'No description')[:100]}..."
+            for f in released_features[:3]
+        ]) if released_features else "No recent releases found"
+        
+        upcoming_text = "\n".join([
+            f"- {f.get('title', 'Untitled')}: {f.get('description', 'No description')[:100]}..."
+            for f in upcoming_features[:3]
+        ]) if upcoming_features else "No upcoming features found"
+        
         prompt = f"""
-        Analyze these Atlassian {platform} roadmap features and provide insights:
+        Analyze this Atlassian {platform} roadmap data:
 
-        {features_text}
+        RECENT RELEASES ({len(released_features)} total):
+        {released_text}
 
-        Please provide:
-        1. Key features released recently (summarized)
-        2. Key upcoming features in the near future
-        3. Strategic themes and trends
-        4. Impact on users and organizations
+        UPCOMING FEATURES ({len(upcoming_features)} total):
+        {upcoming_text}
 
-        Keep the response concise and business-focused.
+        Provide a JSON response with exactly this structure:
+        {{
+          "recent_releases_summary": "Brief summary of recent releases and their impact",
+          "upcoming_features_summary": "Brief summary of upcoming features and strategic direction",
+          "strategic_themes": ["theme1", "theme2", "theme3"]
+        }}
+
+        Keep each summary to 1-2 sentences, focus on business value.
         """
         
         # Try new OpenAI client first, fallback to legacy
@@ -743,7 +839,7 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
             # New OpenAI client (v1.0+) - synchronous call
             client = openai.OpenAI(api_key=openai_key)
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Uses latest cheaper version
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},
                     {"role": "user", "content": prompt}
@@ -758,7 +854,7 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
             response = await openai.ChatCompletion.acreate(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an expert Atlassian product analyst providing roadmap insights."},
+                    {"role": "system", "content": "You are an expert Atlassian product analyst. Always respond with valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=500,
@@ -766,13 +862,37 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str) -> Dict[s
             )
             ai_content = response.choices[0].message.content
         
-        return {
-            "recent_releases_summary": "AI-powered analysis of recent releases",
-            "upcoming_features_summary": "AI-powered analysis of upcoming features", 
-            "strategic_themes": ["Enhanced collaboration", "AI-powered features", "Enterprise scale"],
-            "ai_insights": ai_content,
-            "analysis_timestamp": datetime.now().isoformat()
-        }
+        # Parse the AI response as JSON
+        try:
+            import json
+            ai_data = json.loads(ai_content)
+            result = {
+                "recent_releases_summary": ai_data.get("recent_releases_summary", f"{len(released_features)} features released recently for {platform}"),
+                "upcoming_features_summary": ai_data.get("upcoming_features_summary", f"{len(upcoming_features)} features planned for {platform}"), 
+                "strategic_themes": ai_data.get("strategic_themes", ["Performance", "User Experience", "Integration"]),
+                "ai_insights": ai_content,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now().isoformat(),  # For cache validation
+                "from_cache": False
+            }
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to parse AI response as JSON: {e}, using fallback")
+            # If AI response isn't valid JSON, create summary from the raw response
+            result = {
+                "recent_releases_summary": f"{len(released_features)} features released recently including {', '.join([f.get('title', 'Unknown')[:30] for f in released_features[:2]])} and more" if released_features else "No recent releases found",
+                "upcoming_features_summary": f"{len(upcoming_features)} features in development including {', '.join([f.get('title', 'Unknown')[:30] for f in upcoming_features[:2]])} and more" if upcoming_features else "No upcoming features announced",
+                "strategic_themes": ["Platform Enhancement", "User Experience", "Performance"],
+                "ai_insights": ai_content,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now().isoformat(),  # For cache validation
+                "from_cache": False
+            }
+        
+        # Store in cache
+        ai_analysis_cache[cache_key] = result
+        logger.info(f"Cached new AI analysis for {platform}")
+        
+        return result
         
     except Exception as e:
         logger.error(f"Error in AI analysis: {e}")
