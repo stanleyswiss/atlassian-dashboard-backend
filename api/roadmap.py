@@ -178,46 +178,81 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                 import re
                                 import json
                                 
-                                # Look specifically for the itemsArr array that contains roadmap data
-                                if 'itemsArr' in script_content:
-                                    logger.info("Found script with itemsArr - extracting real roadmap data")
+                                # Look for MULTIPLE data arrays that contain roadmap data
+                                if any(keyword in script_content for keyword in ['itemsArr', 'roadmapData', 'allItems', 'items']):
+                                    logger.info("Found script with roadmap data - extracting from multiple sources")
                                     
-                                    # Find itemsArr and extract it properly with bracket counting
-                                    itemsarr_pos = script_content.find('"itemsArr":')
-                                    if itemsarr_pos != -1:
-                                        # Find the start of the array
-                                        start_bracket = script_content.find('[', itemsarr_pos)
-                                        if start_bracket != -1:
-                                            # Count brackets to find the end
-                                            bracket_count = 0
-                                            end_pos = start_bracket
+                                    # Search for multiple possible array names
+                                    array_patterns = [
+                                        '"itemsArr":', 
+                                        '"roadmapData":',
+                                        '"allItems":',
+                                        '"items":',
+                                        '"futureItems":',
+                                        '"longTermItems":'
+                                    ]
+                                    
+                                    all_extracted_data = []
+                                    
+                                    for pattern in array_patterns:
+                                        array_pos = script_content.find(pattern)
+                                        if array_pos != -1:
+                                            logger.info(f"Found data array: {pattern}")
                                             
-                                            for i, char in enumerate(script_content[start_bracket:], start_bracket):
-                                                if char == '[':
-                                                    bracket_count += 1
-                                                elif char == ']':
-                                                    bracket_count -= 1
-                                                    if bracket_count == 0:
-                                                        end_pos = i + 1
-                                                        break
-                                            
-                                            json_str = script_content[start_bracket:end_pos]
-                                            
-                                            try:
-                                                data = json.loads(json_str)
-                                                logger.info(f"Found itemsArr with {len(data)} items")
+                                            # Find the start of the array
+                                            start_bracket = script_content.find('[', array_pos)
+                                            if start_bracket != -1:
+                                                # Count brackets to find the end
+                                                bracket_count = 0
+                                                end_pos = start_bracket
                                                 
-                                                for item in data:
-                                                    if isinstance(item, dict):
-                                                        # Extract fields using actual Atlassian structure
-                                                        title = item.get('plainEnglishTitle') or item.get('title', '')
-                                                        filter_desc = item.get('filterDescription', '')
-                                                        quarter = item.get('customField1', '')
+                                                for i, char in enumerate(script_content[start_bracket:], start_bracket):
+                                                    if char == '[':
+                                                        bracket_count += 1
+                                                    elif char == ']':
+                                                        bracket_count -= 1
+                                                        if bracket_count == 0:
+                                                            end_pos = i + 1
+                                                            break
+                                                
+                                                json_str = script_content[start_bracket:end_pos]
+                                            
+                                                try:
+                                                    data = json.loads(json_str)
+                                                    if isinstance(data, list) and len(data) > 0:
+                                                        logger.info(f"Found {pattern} with {len(data)} items")
+                                                        all_extracted_data.extend(data)
+                                                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                                                    logger.warning(f"Error parsing {pattern}: {e}")
+                                                    continue
+                                    
+                                    # Process all extracted data from multiple sources
+                                    if all_extracted_data:
+                                        logger.info(f"Total extracted items from all sources: {len(all_extracted_data)}")
+                                        
+                                        # Remove duplicates based on title
+                                        seen_titles = set()
+                                        unique_data = []
+                                        for item in all_extracted_data:
+                                            title = item.get('plainEnglishTitle') or item.get('title', '')
+                                            if title and title not in seen_titles:
+                                                unique_data.append(item)
+                                                seen_titles.add(title)
+                                        
+                                        logger.info(f"After deduplication: {len(unique_data)} unique items")
+                                        
+                                        # Process all unique items
+                                        for item in unique_data:
+                                            if isinstance(item, dict):
+                                                # Extract fields using actual Atlassian structure
+                                                title = item.get('plainEnglishTitle') or item.get('title', '')
+                                                filter_desc = item.get('filterDescription', '')
+                                                quarter = item.get('customField1', '')
                                                     
                                                         
-                                                        # Skip empty entries and garbage data
-                                                        if not title or len(title.strip()) < 5 or 'Results' in title or title.isdigit():
-                                                            continue
+                                                # Skip empty entries and garbage data
+                                                if not title or len(title.strip()) < 5 or 'Results' in title or title.isdigit():
+                                                    continue
                                                         
                                                         # Clean HTML from description
                                                         if filter_desc:
@@ -248,23 +283,41 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                                     item_status = cat
                                                                     break
                                                         
-                                                        # Map status to our format with more patterns
-                                                        item_status_lower = item_status.lower()
-                                                        if 'released' in item_status_lower or 'shipped' in item_status_lower:
+                                                        # Enhanced status mapping for ALL roadmap types including FUTURE
+                                                        item_status_lower = item_status.lower().strip()
+                                                        
+                                                        # FUTURE items (2026-2027) - CRITICAL for missing items
+                                                        if ('future' in item_status_lower):
+                                                            status = 'planned'
+                                                        # Released items
+                                                        elif ('released' in item_status_lower or 
+                                                              'shipped' in item_status_lower or
+                                                              'completed' in item_status_lower or
+                                                              'available' in item_status_lower):
                                                             status = 'released'
+                                                        # Coming/Upcoming items  
                                                         elif ('coming soon' in item_status_lower or 
                                                               'upcoming' in item_status_lower or 
-                                                              'in development' in item_status_lower):
+                                                              'in development' in item_status_lower or
+                                                              'coming' in item_status_lower):
                                                             status = 'upcoming'
-                                                        elif ('future' in item_status_lower or 
-                                                              'planned' in item_status_lower or
-                                                              'planning' in item_status_lower):
+                                                        # Planned/Planning items
+                                                        elif ('planned' in item_status_lower or
+                                                              'planning' in item_status_lower or
+                                                              'roadmap' in item_status_lower):
                                                             status = 'planned'
-                                                        elif 'beta' in item_status_lower or 'eap' in item_status_lower:
+                                                        # Beta/EAP items
+                                                        elif ('beta' in item_status_lower or 
+                                                              'eap' in item_status_lower or
+                                                              'early access' in item_status_lower):
                                                             status = 'beta'
                                                         else:
-                                                            # Default to upcoming for non-released items
-                                                            status = 'upcoming'
+                                                            # Check quarter for future items (2026+ = planned)
+                                                            quarter_text = (quarter or '').lower()
+                                                            if any(year in quarter_text for year in ['2026', '2027', '2028', '2029']):
+                                                                status = 'planned'  # FUTURE items
+                                                            else:
+                                                                status = 'upcoming'  # Default for unclear items
                                                         
                                                         # Extract products - try multiple approaches
                                                         products = []
@@ -319,13 +372,17 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                             if not products:
                                                                 products = ['jira']
                                                         
-                                                        # Clean and validate quarter
+                                                        # Enhanced quarter handling for regular AND future items
                                                         clean_quarter = 'Q1 2025'  # Default
                                                         if quarter and quarter.strip():
                                                             q_text = quarter.strip()
-                                                            # Validate quarter format (Q1-Q4 + year)
                                                             import re
-                                                            if re.match(r'^Q[1-4]\s+\d{4}$', q_text):
+                                                            
+                                                            # Handle FUTURE years (2026, 2027, etc.) - CRITICAL for missing items
+                                                            if re.match(r'^(2026|2027|2028|2029|2030)$', q_text):
+                                                                clean_quarter = f"FUTURE {q_text}"
+                                                            # Standard quarter format (Q1-Q4 + year)
+                                                            elif re.match(r'^Q[1-4]\s+\d{4}$', q_text):
                                                                 clean_quarter = q_text
                                                             elif re.match(r'^Q[1-4]\d{4}$', q_text):
                                                                 # Add space if missing (Q12024 -> Q1 2024)  
@@ -335,7 +392,14 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                                 year_match = re.search(r'\b(20\d{2})\b', q_text)
                                                                 q_match = re.search(r'\bQ([1-4])\b', q_text)
                                                                 if year_match and q_match:
-                                                                    clean_quarter = f"Q{q_match.group(1)} {year_match.group(1)}"
+                                                                    year = year_match.group(1)
+                                                                    # Handle future years specially
+                                                                    if int(year) >= 2026:
+                                                                        clean_quarter = f"FUTURE {year}"
+                                                                    else:
+                                                                        clean_quarter = f"Q{q_match.group(1)} {year}"
+                                                                elif year_match and int(year_match.group(1)) >= 2026:
+                                                                    clean_quarter = f"FUTURE {year_match.group(1)}"
                                                         
                                                         features.append({
                                                             'title': title.strip()[:200],
@@ -345,17 +409,43 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                             'products': products
                                                         })
                                                         
-                                                        # Remove hard limit - get all features
-                                                        if len(features) >= 200:  # Reasonable safety limit
+                                                        # No hard limit - get ALL features (expect ~446)
+                                                        if len(features) >= 500:  # Only prevent infinite loops
+                                                            logger.warning(f"Extracted unusually high number of features: {len(features)}")
                                                             break
                                                 
-                                                if len(features) > 0:
-                                                    logger.info(f"Successfully extracted {len(features)} REAL roadmap features from itemsArr")
-                                                    break
-                                                    
-                                            except (json.JSONDecodeError, KeyError, TypeError) as e:
-                                                logger.warning(f"Error parsing itemsArr: {e}")
-                                                continue
+                                        if len(features) > 0:
+                                            logger.info(f"Successfully extracted {len(features)} REAL roadmap features from multiple sources")
+                                            
+                                            # Validation logging for expected items
+                                            status_counts = {}
+                                            quarter_counts = {}
+                                            future_items = []
+                                            
+                                            for feature in features:
+                                                status = feature.get('status', 'unknown')
+                                                quarter = feature.get('quarter', 'unknown')
+                                                
+                                                status_counts[status] = status_counts.get(status, 0) + 1
+                                                quarter_counts[quarter] = quarter_counts.get(quarter, 0) + 1
+                                                
+                                                # Track FUTURE items specifically
+                                                if 'FUTURE' in quarter or status == 'planned':
+                                                    future_items.append(feature['title'])
+                                            
+                                            logger.info(f"Status distribution: {status_counts}")
+                                            logger.info(f"Quarter distribution: {dict(list(quarter_counts.items())[:10])}...")  # First 10
+                                            logger.info(f"Found {len(future_items)} FUTURE items: {future_items[:5]}...")  # First 5
+                                            
+                                            # Validation check for expected count
+                                            if len(features) >= 400:
+                                                logger.info("✅ SUCCESS: Extracted expected number of roadmap items (400+)")
+                                            elif len(features) >= 300:
+                                                logger.warning(f"⚠️  PARTIAL SUCCESS: Extracted {len(features)} items (expected 446+)")  
+                                            else:
+                                                logger.error(f"❌ EXTRACTION FAILED: Only {len(features)} items (expected 446+)")
+                                            
+                                            break
                                 
                                 # If we found real features, stop processing scripts
                                 if len(features) > 0:
