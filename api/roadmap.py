@@ -220,7 +220,6 @@ async def scrape_roadmap(url: str) -> Dict[str, Any]:
                                                             continue
                                                         
                                                         # Clean HTML from description
-                                                        from bs4 import BeautifulSoup
                                                         if filter_desc:
                                                             desc_soup = BeautifulSoup(filter_desc, 'html.parser')
                                                             description = desc_soup.get_text(strip=True)
