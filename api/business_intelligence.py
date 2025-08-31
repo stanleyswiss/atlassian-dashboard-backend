@@ -420,6 +420,48 @@ async def get_feature_requests(days: int = 30):
         logger.error(f"Failed to get feature requests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/cleanup-spam")
+async def cleanup_spam_data():
+    """
+    Clean up spam and irrelevant data from the database
+    """
+    try:
+        from database.connection import get_session
+        from database.models import PostDB
+        
+        spam_keywords = ['jetblue', 'air france', 'airline', 'customer list', 'phone numbers', 
+                        'email list', 'exodus wallet', 'gemini customer', 'crypto']
+        
+        with get_session() as db:
+            # Find and delete spam posts
+            deleted_count = 0
+            all_posts = db.query(PostDB).all()
+            
+            for post in all_posts:
+                title_lower = (post.title or '').lower()
+                content_lower = (post.content or '')[:500].lower()
+                
+                # Check if it's spam
+                is_spam = any(spam_word in title_lower or spam_word in content_lower 
+                             for spam_word in spam_keywords)
+                
+                if is_spam:
+                    db.delete(post)
+                    deleted_count += 1
+                    logger.info(f"Deleted spam post: {post.title[:50]}...")
+            
+            db.commit()
+            
+            return {
+                "success": True,
+                "deleted_count": deleted_count,
+                "message": f"Successfully deleted {deleted_count} spam posts"
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to cleanup spam: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/executive-summary")
 async def get_executive_summary(days: int = 7):
     """
