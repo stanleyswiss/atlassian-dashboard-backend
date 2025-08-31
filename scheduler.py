@@ -27,16 +27,12 @@ class TaskScheduler:
         """Get AI analyzer with current API key from settings"""
         if self.ai_analyzer is None:
             try:
-                from api.settings import get_openai_api_key, is_sentiment_analysis_enabled
-                if is_sentiment_analysis_enabled():
-                    api_key = get_openai_api_key()
-                    if api_key and not api_key.startswith("*"):
-                        self.ai_analyzer = AIAnalyzer(api_key=api_key)
-                    else:
-                        logger.warning("OpenAI API key not configured, sentiment analysis disabled")
-                        return None
+                from api.settings import get_openai_api_key
+                api_key = get_openai_api_key()
+                if api_key and not api_key.startswith("*"):
+                    self.ai_analyzer = AIAnalyzer(api_key=api_key)
                 else:
-                    logger.info("Sentiment analysis disabled in settings")
+                    logger.warning("OpenAI API key not configured, AI analysis disabled")
                     return None
             except Exception as e:
                 logger.error(f"Failed to initialize AI analyzer: {e}")

@@ -634,10 +634,8 @@ async def bulk_generate_ai_summaries(batch_size: int = 20):
         
         # Get AI analyzer
         try:
-            from api.settings import get_openai_api_key, is_sentiment_analysis_enabled
-            if not is_sentiment_analysis_enabled():
-                return {"success": False, "error": "AI analysis is disabled in settings"}
-                
+            from api.settings import get_openai_api_key
+            
             api_key = get_openai_api_key()
             if not api_key or api_key.startswith("*"):
                 return {"success": False, "error": "OpenAI API key not configured"}
