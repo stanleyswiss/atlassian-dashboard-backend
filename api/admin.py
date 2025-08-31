@@ -99,7 +99,13 @@ async def migrate_database(force_recreate: bool = False):
                 "mentioned_products": "JSONB",
                 "thread_data": "JSONB",  # Full thread/reply data
                 "has_accepted_solution": "BOOLEAN DEFAULT FALSE",
-                "total_replies": "INTEGER DEFAULT 0"
+                "total_replies": "INTEGER DEFAULT 0",
+                # AI-generated summary fields - MISSING FROM DATABASE!
+                "ai_summary": "TEXT",  # AI-generated concise summary
+                "ai_category": "VARCHAR(50)",  # AI-determined category
+                "ai_key_points": "JSONB",  # JSON array of key points
+                "ai_action_required": "VARCHAR(20)",  # high, medium, low, none
+                "ai_hashtags": "JSONB"  # JSON array of hashtags
             }
         else:
             # SQLite - use TEXT for JSON fields
@@ -117,7 +123,13 @@ async def migrate_database(force_recreate: bool = False):
                 "mentioned_products": "TEXT",
                 "thread_data": "TEXT",  # Full thread/reply data
                 "has_accepted_solution": "INTEGER DEFAULT 0",  # SQLite uses INTEGER for boolean
-                "total_replies": "INTEGER DEFAULT 0"
+                "total_replies": "INTEGER DEFAULT 0",
+                # AI-generated summary fields - MISSING FROM DATABASE!
+                "ai_summary": "TEXT",  # AI-generated concise summary
+                "ai_category": "VARCHAR(50)",  # AI-determined category
+                "ai_key_points": "TEXT",  # JSON array stored as TEXT in SQLite
+                "ai_action_required": "VARCHAR(20)",  # high, medium, low, none
+                "ai_hashtags": "TEXT"  # JSON array stored as TEXT in SQLite
             }
         
         added_columns = []
@@ -652,6 +664,70 @@ async def update_resolution_status_for_existing_posts():
         
     except Exception as e:
         logger.error(f"Failed to update resolution status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/add-ai-columns")
+async def add_missing_ai_columns():
+    """Add the specific AI summary columns that are missing"""
+    try:
+        logger.info("🔄 Adding missing AI summary columns")
+        
+        with engine.connect() as conn:
+            trans = conn.begin()
+            
+            try:
+                # Add the missing AI columns directly
+                ai_columns = [
+                    "ALTER TABLE posts ADD COLUMN ai_summary TEXT",
+                    "ALTER TABLE posts ADD COLUMN ai_category VARCHAR(50)", 
+                    "ALTER TABLE posts ADD COLUMN ai_key_points JSONB",
+                    "ALTER TABLE posts ADD COLUMN ai_action_required VARCHAR(20)",
+                    "ALTER TABLE posts ADD COLUMN ai_hashtags JSONB"
+                ]
+                
+                added_columns = []
+                errors = []
+                
+                for sql in ai_columns:
+                    try:
+                        conn.execute(text(sql))
+                        column_name = sql.split("ADD COLUMN ")[1].split(" ")[0]
+                        added_columns.append(column_name)
+                        logger.info(f"Added AI column: {column_name}")
+                    except Exception as col_error:
+                        error_msg = str(col_error)
+                        if "already exists" in error_msg:
+                            column_name = sql.split("ADD COLUMN ")[1].split(" ")[0]
+                            logger.info(f"Column {column_name} already exists")
+                        else:
+                            errors.append(f"Failed to add column: {error_msg}")
+                            logger.error(f"Error adding column: {col_error}")
+                
+                trans.commit()
+                
+                return {
+                    "success": True,
+                    "message": "AI columns migration completed",
+                    "added_columns": added_columns,
+                    "errors": errors,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"AI columns migration failed: {e}")
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
         return {
             "success": False,
             "error": str(e),

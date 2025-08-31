@@ -17,6 +17,7 @@ from api.diagnostic import router as diagnostic_router
 from scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 
 logger = logging.getLogger(__name__)
+# Force deployment to add AI columns - 2025-08-31
 
 # Create database tables on startup
 create_tables()
