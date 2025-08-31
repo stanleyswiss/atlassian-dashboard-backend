@@ -75,9 +75,31 @@ async def get_critical_issues(days: int = 7):
                     logger.info(f"🚫 Skipping announcement from critical issues: {post.title[:50]}...")
             
             if is_critical:
+                # Filter out spam and irrelevant content from critical issues
+                title_lower = post.title.lower() if post.title else ''
+                content_lower = (post.content or '').lower()[:200]
+                
+                # Skip obvious spam/irrelevant content
+                spam_keywords = ['jetblue', 'customers list', 'phone numbers', 'email list', 'buy list', 'purchase list',
+                               'contact list', 'marketing list', 'airline customers', 'travel customers', 'customer database']
+                
+                if any(spam_word in title_lower or spam_word in content_lower for spam_word in spam_keywords):
+                    logger.info(f"🚫 Skipping spam from critical issues: {post.title[:50]}...")
+                    continue
+                
+                # Only include Atlassian-related issues
+                atlassian_keywords = ['jira', 'confluence', 'bitbucket', 'trello', 'jsm', 'service desk', 'atlassian',
+                                    'bamboo', 'fisheye', 'crucible', 'crowd', 'marketplace', 'api', 'plugin', 'addon']
+                
+                is_atlassian_related = any(keyword in title_lower or keyword in content_lower for keyword in atlassian_keywords)
+                
+                if not is_atlassian_related:
+                    logger.info(f"🚫 Skipping non-Atlassian issue: {post.title[:50]}...")
+                    continue
+                
                 # Determine severity from enhanced analysis
                 severity = post.problem_severity if post.problem_severity in ['critical', 'high', 'medium', 'low'] else 'medium'
-                business_impact = post.business_impact or 'unknown'
+                business_impact = post.business_impact or 'productivity_loss'
                 
                 # Create detailed summary for the issue
                 content_snippet = post.content[:300] if post.content else post.excerpt or ''
@@ -148,11 +170,32 @@ async def get_awesome_discoveries(days: int = 7):
                     logger.info(f"🔍 Awesome discovery found via keywords: {post.title[:50]}...")
             
             if is_awesome:
+                # Filter out spam and irrelevant content
+                title_lower = post.title.lower() if post.title else ''
+                content_lower = (post.content or '').lower()[:200]
+                
+                # Skip obvious spam/irrelevant content
+                spam_keywords = ['jetblue', 'customers list', 'phone numbers', 'email list', 'buy list', 'purchase list',
+                               'contact list', 'marketing list', 'airline customers', 'travel customers']
+                
+                if any(spam_word in title_lower or spam_word in content_lower for spam_word in spam_keywords):
+                    logger.info(f"🚫 Skipping spam from awesome discoveries: {post.title[:50]}...")
+                    continue
+                
+                # Only include Atlassian-related discoveries
+                atlassian_keywords = ['jira', 'confluence', 'bitbucket', 'trello', 'jsm', 'service desk', 'atlassian',
+                                    'bamboo', 'fisheye', 'crucible', 'crowd', 'marketplace']
+                
+                is_atlassian_related = any(keyword in title_lower or keyword in content_lower for keyword in atlassian_keywords)
+                
+                if not is_atlassian_related:
+                    logger.info(f"🚫 Skipping non-Atlassian discovery: {post.title[:50]}...")
+                    continue
+                
                 # Create detailed summary based on content type
                 content_snippet = post.content[:400] if post.content else post.excerpt or ''
                 
                 # Check if this is an announcement to provide appropriate context
-                title_lower = post.title.lower() if post.title else ''
                 is_announcement = (post.category == 'announcements' or 
                                  any(indicator in title_lower for indicator in ['announcement', 'release', 'new version', 'update']))
                 
@@ -224,6 +267,28 @@ async def get_trending_solutions(days: int = 7):
                     logger.info(f"🔍 Trending solution found via keywords: {post.title[:50]}...")
                 
             if is_solution:
+                # Filter out spam and irrelevant content
+                title_lower = post.title.lower() if post.title else ''
+                content_lower = (post.content or '').lower()[:200]
+                
+                # Skip obvious spam/irrelevant content
+                spam_keywords = ['jetblue', 'customers list', 'phone numbers', 'email list', 'buy list', 'purchase list',
+                               'contact list', 'marketing list', 'airline customers', 'travel customers']
+                
+                if any(spam_word in title_lower or spam_word in content_lower for spam_word in spam_keywords):
+                    logger.info(f"🚫 Skipping spam/irrelevant post: {post.title[:50]}...")
+                    continue
+                
+                # Only include Atlassian-related solutions
+                atlassian_keywords = ['jira', 'confluence', 'bitbucket', 'trello', 'jsm', 'service desk', 'atlassian',
+                                    'bamboo', 'fisheye', 'crucible', 'crowd', 'marketplace']
+                
+                is_atlassian_related = any(keyword in title_lower or keyword in content_lower for keyword in atlassian_keywords)
+                
+                if not is_atlassian_related:
+                    logger.info(f"🚫 Skipping non-Atlassian post: {post.title[:50]}...")
+                    continue
+                
                 # Extract detailed solution description from content
                 solution_content = post.content[:500] if post.content else post.excerpt or ''
                 
@@ -248,10 +313,10 @@ async def get_trending_solutions(days: int = 7):
                     'problem_solved': post.excerpt or (post.title[:100] + '...' if post.title else ''),
                     'solution_description': solution_description,  # Enhanced detailed solution steps
                     'solution_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
-                    'author': post.author or 'Unknown',
-                    'url': post.url or '#',
-                    'products_affected': [post.category] if post.category else [],
-                    'technical_level': 'beginner',  # Could use enhanced analysis
+                    'author': post.author or 'Community Member',
+                    'url': post.url or 'https://community.atlassian.com',  # Default to community home
+                    'products_affected': [post.category] if post.category else ['atlassian'],
+                    'technical_level': 'intermediate' if 'advanced' in solution_description.lower() else 'beginner',
                     'has_visual_guide': bool(post.has_screenshots),
                     'effectiveness_score': 90 if post.resolution_status == 'resolved' else 75,
                     'popularity_trend': 'rising' if post.enhanced_category == 'solution_sharing' else 'stable'
@@ -322,12 +387,12 @@ async def get_unresolved_problems(days: int = 14):
                     'problem_title': post.title,
                     'urgency': post.problem_severity if post.problem_severity in ['critical', 'high', 'medium', 'low'] else 'medium',
                     'days_unresolved': days_ago,
-                    'author': post.author or 'Unknown',
-                    'url': post.url or '#',
-                    'affected_products': [post.category] if post.category else [],
+                    'author': post.author or 'Community Member',
+                    'url': post.url or 'https://community.atlassian.com',
+                    'affected_products': [post.category] if post.category else ['atlassian'],
                     'problem_type': 'configuration' if post.enhanced_category == 'configuration_help' else 'general',
                     'has_screenshots': bool(post.has_screenshots),
-                    'business_impact': post.business_impact or 'unknown',
+                    'business_impact': post.business_impact or 'productivity_loss',
                     'help_potential': 'high' if post.problem_severity in ['critical', 'high'] else 'medium'
                 })
         
