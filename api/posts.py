@@ -293,31 +293,89 @@ async def get_posts_with_ai_summaries(
         if not posts:
             return []
         
-        # Convert to dict format for AI processing
-        posts_data = []
+        # Convert posts to response format, using cached AI summaries when available
+        enhanced_posts = []
+        posts_needing_ai = []
+        
         for post in posts:
             try:
-                post_dict = {
-                    'id': post.id,
-                    'title': post.title or '',
-                    'content': post.content or '',
-                    'author': post.author or '',
-                    'category': post.category or '',
-                    'url': str(post.url) if post.url else '',
-                    'date': post.date.isoformat() if post.date else None,
-                    'sentiment_score': post.sentiment_score,
-                    'sentiment_label': post.sentiment_label
-                }
-                posts_data.append(post_dict)
+                # Check if post already has AI summary cached
+                if post.ai_summary:
+                    # Use cached AI data
+                    import json
+                    def safe_json_parse(value, default):
+                        if not value:
+                            return default
+                        try:
+                            return json.loads(value) if isinstance(value, str) else value
+                        except:
+                            return default
+                    
+                    enhanced_post = {
+                        'id': post.id,
+                        'title': post.title or '',
+                        'content': post.content or '',
+                        'author': post.author or '',
+                        'category': post.category or '',
+                        'url': str(post.url) if post.url else '',
+                        'date': post.date.isoformat() if post.date else None,
+                        'sentiment_score': post.sentiment_score,
+                        'sentiment_label': post.sentiment_label,
+                        'ai_summary': post.ai_summary,
+                        'ai_category': post.ai_category,
+                        'ai_key_points': safe_json_parse(post.ai_key_points, []),
+                        'ai_action_required': post.ai_action_required,
+                        'ai_hashtags': safe_json_parse(post.ai_hashtags, [])
+                    }
+                    enhanced_posts.append(enhanced_post)
+                    logger.debug(f"Using cached AI summary for post {post.id}")
+                else:
+                    # Post needs AI analysis
+                    post_dict = {
+                        'id': post.id,
+                        'title': post.title or '',
+                        'content': post.content or '',
+                        'author': post.author or '',
+                        'category': post.category or '',
+                        'url': str(post.url) if post.url else '',
+                        'date': post.date.isoformat() if post.date else None,
+                        'sentiment_score': post.sentiment_score,
+                        'sentiment_label': post.sentiment_label
+                    }
+                    posts_needing_ai.append((post, post_dict))
+                    
             except Exception as e:
-                logger.error(f"Error converting post {post.id}: {e}")
+                logger.error(f"Error processing post {post.id}: {e}")
                 continue
         
-        # Generate AI summaries
-        analyzer = AIAnalyzer()
-        enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+        # Generate AI summaries only for posts that don't have them cached
+        if posts_needing_ai:
+            logger.info(f"🤖 Generating AI summaries for {len(posts_needing_ai)} posts (cached: {len(enhanced_posts)})")
+            
+            analyzer = AIAnalyzer()
+            posts_data = [post_dict for _, post_dict in posts_needing_ai]
+            ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+            
+            # Save AI summaries to database and add to response
+            for (original_post, _), ai_post in zip(posts_needing_ai, ai_enhanced_posts):
+                try:
+                    # Update database with AI summary
+                    original_post.ai_summary = ai_post.get('ai_summary')
+                    original_post.ai_category = ai_post.get('ai_category') 
+                    original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                    original_post.ai_action_required = ai_post.get('ai_action_required')
+                    original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                    
+                    db.commit()
+                    enhanced_posts.append(ai_post)
+                    logger.debug(f"Generated and cached AI summary for post {original_post.id}")
+                    
+                except Exception as e:
+                    logger.error(f"Error saving AI summary for post {original_post.id}: {e}")
+                    enhanced_posts.append(ai_post)  # Still return the data even if save fails
+        else:
+            logger.info(f"📋 All {len(enhanced_posts)} posts already have cached AI summaries")
         
-        logger.info(f"Generated AI summaries for {len(enhanced_posts)} posts")
         return enhanced_posts
         
     except Exception as e:
