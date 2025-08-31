@@ -862,10 +862,26 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str, force_ref
             )
             ai_content = response.choices[0].message.content
         
-        # Parse the AI response as JSON
+        # Parse the AI response as JSON (handle markdown code blocks)
         try:
             import json
-            ai_data = json.loads(ai_content)
+            
+            # Clean the AI response - remove markdown code blocks if present
+            cleaned_content = ai_content.strip()
+            if cleaned_content.startswith('```json'):
+                # Remove opening ```json
+                cleaned_content = cleaned_content[7:]
+            if cleaned_content.startswith('```'):
+                # Remove opening ```
+                cleaned_content = cleaned_content[3:]
+            if cleaned_content.endswith('```'):
+                # Remove closing ```
+                cleaned_content = cleaned_content[:-3]
+            
+            cleaned_content = cleaned_content.strip()
+            logger.info(f"Parsing AI response: {cleaned_content[:200]}...")
+            
+            ai_data = json.loads(cleaned_content)
             result = {
                 "recent_releases_summary": ai_data.get("recent_releases_summary", f"{len(released_features)} features released recently for {platform}"),
                 "upcoming_features_summary": ai_data.get("upcoming_features_summary", f"{len(upcoming_features)} features planned for {platform}"), 
@@ -876,16 +892,20 @@ async def analyze_roadmap_with_ai(features: List[Dict], platform: str, force_ref
                 "from_cache": False
             }
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"Failed to parse AI response as JSON: {e}, using fallback")
+            logger.warning(f"Failed to parse AI response as JSON: {e}")
+            logger.warning(f"Original AI response: {ai_content[:500]}...")
+            logger.warning(f"Cleaned content: {cleaned_content[:500]}...")
             # If AI response isn't valid JSON, create summary from the raw response
+            # Create fallback with some content from the AI response even if JSON parsing failed
             result = {
-                "recent_releases_summary": f"{len(released_features)} features released recently including {', '.join([f.get('title', 'Unknown')[:30] for f in released_features[:2]])} and more" if released_features else "No recent releases found",
-                "upcoming_features_summary": f"{len(upcoming_features)} features in development including {', '.join([f.get('title', 'Unknown')[:30] for f in upcoming_features[:2]])} and more" if upcoming_features else "No upcoming features announced",
-                "strategic_themes": ["Platform Enhancement", "User Experience", "Performance"],
+                "recent_releases_summary": f"AI Analysis: {len(released_features)} features released recently for {platform}. {ai_content[:100] if ai_content else 'Analysis available.'}",
+                "upcoming_features_summary": f"AI Analysis: {len(upcoming_features)} features planned for {platform}. {ai_content[100:200] if len(ai_content) > 100 else 'Strategic direction available.'}",
+                "strategic_themes": ["Data Management", "Security", "User Experience"],
                 "ai_insights": ai_content,
                 "analysis_timestamp": datetime.now().isoformat(),
-                "timestamp": datetime.now().isoformat(),  # For cache validation
-                "from_cache": False
+                "timestamp": datetime.now().isoformat(),
+                "from_cache": False,
+                "parse_error": str(e)
             }
         
         # Store in cache
