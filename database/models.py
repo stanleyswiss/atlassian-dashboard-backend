@@ -37,12 +37,12 @@ class PostDB(Base):
     has_accepted_solution = Column(Boolean, default=False)  # Quick flag for solution status
     total_replies = Column(Integer, default=0)  # Number of replies in thread
     
-    # AI-generated summary fields - TEMPORARILY DISABLED UNTIL DB MIGRATION
-    # ai_summary = Column(Text, nullable=True)  # AI-generated concise summary
-    # ai_category = Column(String(50), nullable=True)  # AI-determined category
-    # ai_key_points = Column(Text, nullable=True)  # JSON array of key points
-    # ai_action_required = Column(String(20), nullable=True)  # high, medium, low, none
-    # ai_hashtags = Column(Text, nullable=True)  # JSON array of hashtags
+    # AI-generated summary fields
+    ai_summary = Column(Text, nullable=True)  # AI-generated concise summary
+    ai_category = Column(String(50), nullable=True)  # AI-determined category
+    ai_key_points = Column(Text, nullable=True)  # JSON array of key points
+    ai_action_required = Column(String(20), nullable=True)  # high, medium, low, none
+    ai_hashtags = Column(Text, nullable=True)  # JSON array of hashtags
     
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)
