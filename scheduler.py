@@ -113,7 +113,10 @@ class TaskScheduler:
         # Step 2: Analyze sentiment for unanalyzed posts
         await self.run_sentiment_analysis()
         
-        # Step 3: Generate analytics
+        # Step 3: Generate comprehensive AI summaries for posts without them
+        await self.run_comprehensive_ai_analysis()
+        
+        # Step 4: Generate analytics
         await self.run_analytics_task()
         
         logger.info("✅ Full data collection pipeline completed!")
@@ -210,6 +213,77 @@ class TaskScheduler:
             
         except Exception as e:
             logger.error(f"Sentiment analysis task failed: {e}")
+    
+    async def run_comprehensive_ai_analysis(self):
+        """Generate comprehensive AI summaries for posts without them"""
+        logger.info("🤖 Running comprehensive AI analysis...")
+        
+        try:
+            # Get posts without AI summaries (ai_summary is null)
+            from database import get_session
+            from database.models import PostDB
+            
+            with get_session() as db:
+                posts_needing_analysis = db.query(PostDB).filter(
+                    PostDB.ai_summary.is_(None)
+                ).order_by(PostDB.created_at.desc()).limit(10).all()  # Process 10 at a time
+                
+                if not posts_needing_analysis:
+                    logger.info("✅ No posts need comprehensive AI analysis")
+                    return
+                
+                logger.info(f"🤖 Analyzing {len(posts_needing_analysis)} posts with comprehensive AI...")
+                
+                # Get AI analyzer
+                ai_analyzer = self.get_ai_analyzer()
+                if not ai_analyzer:
+                    logger.warning("AI analyzer not available, skipping comprehensive analysis")
+                    return
+                
+                analyzed_count = 0
+                for post in posts_needing_analysis:
+                    try:
+                        # Convert to dict format for AI processing
+                        post_dict = {
+                            'id': post.id,
+                            'title': post.title or '',
+                            'content': post.content or '',
+                            'author': post.author or '',
+                            'category': post.category or '',
+                            'url': str(post.url) if post.url else '',
+                            'date': post.date.isoformat() if post.date else None,
+                            'sentiment_score': post.sentiment_score,
+                            'sentiment_label': post.sentiment_label
+                        }
+                        
+                        # Generate comprehensive AI summary
+                        summary_result = await ai_analyzer.summarize_post(
+                            post.title or '', 
+                            post.content or ''
+                        )
+                        
+                        if summary_result:
+                            # Update post with AI summary data
+                            import json
+                            post.ai_summary = summary_result.get('summary', '')
+                            post.ai_category = summary_result.get('category', '')
+                            post.ai_key_points = json.dumps(summary_result.get('key_points', []))
+                            post.ai_action_required = summary_result.get('action_required', 'none')
+                            post.ai_hashtags = json.dumps(summary_result.get('hashtags', []))
+                            
+                            analyzed_count += 1
+                            logger.debug(f"Generated AI summary for post {post.id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to analyze post {post.id}: {e}")
+                        continue
+                
+                # Commit all changes
+                db.commit()
+                logger.info(f"✅ Comprehensive AI analysis completed for {analyzed_count} posts")
+                
+        except Exception as e:
+            logger.error(f"Comprehensive AI analysis task failed: {e}")
     
     async def run_analytics_task(self):
         """Generate daily analytics and trends"""

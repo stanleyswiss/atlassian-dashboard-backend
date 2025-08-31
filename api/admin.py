@@ -621,6 +621,106 @@ async def force_reanalyze_all_posts(batch_size: int = 25):
     """Force re-analysis of all posts with real OpenAI API (replaces mock data)"""
     return await analyze_all_posts_with_ai(batch_size, force_reanalyze=True)
 
+@router.post("/bulk-generate-ai-summaries")
+async def bulk_generate_ai_summaries(batch_size: int = 20):
+    """Generate AI summaries for all posts without them - optimized for cost efficiency"""
+    try:
+        logger.info(f"🤖 Starting bulk AI summary generation (batch size: {batch_size})")
+        
+        from database import get_session
+        from database.models import PostDB
+        from services.ai_analyzer import AIAnalyzer
+        import json
+        
+        # Get AI analyzer
+        try:
+            from api.settings import get_openai_api_key, is_sentiment_analysis_enabled
+            if not is_sentiment_analysis_enabled():
+                return {"success": False, "error": "AI analysis is disabled in settings"}
+                
+            api_key = get_openai_api_key()
+            if not api_key or api_key.startswith("*"):
+                return {"success": False, "error": "OpenAI API key not configured"}
+                
+            ai_analyzer = AIAnalyzer(api_key=api_key)
+        except Exception as e:
+            return {"success": False, "error": f"Failed to initialize AI analyzer: {e}"}
+        
+        with get_session() as db:
+            # Count total posts needing analysis
+            total_posts = db.query(PostDB).filter(PostDB.ai_summary.is_(None)).count()
+            
+            if total_posts == 0:
+                return {
+                    "success": True,
+                    "message": "All posts already have AI summaries",
+                    "total_posts": total_posts,
+                    "processed": 0
+                }
+            
+            # Get batch of posts to process
+            posts_to_process = db.query(PostDB).filter(
+                PostDB.ai_summary.is_(None)
+            ).order_by(PostDB.created_at.desc()).limit(batch_size).all()
+            
+            logger.info(f"Processing {len(posts_to_process)} posts (remaining: {total_posts})")
+            
+            processed_count = 0
+            errors = []
+            
+            for post in posts_to_process:
+                try:
+                    # Generate AI summary using the same method as the API
+                    summary_result = await ai_analyzer.summarize_post(
+                        post.title or '', 
+                        post.content or ''
+                    )
+                    
+                    if summary_result:
+                        # Update post with AI summary data
+                        post.ai_summary = summary_result.get('summary', '')[:500]  # Limit to 500 chars
+                        post.ai_category = summary_result.get('category', '')
+                        post.ai_key_points = json.dumps(summary_result.get('key_points', []))
+                        post.ai_action_required = summary_result.get('action_required', 'none')
+                        post.ai_hashtags = json.dumps(summary_result.get('hashtags', []))
+                        
+                        processed_count += 1
+                        logger.debug(f"Generated AI summary for post {post.id}: {post.title[:50]}...")
+                    else:
+                        logger.warning(f"No AI summary generated for post {post.id}")
+                        
+                except Exception as e:
+                    error_msg = f"Post {post.id}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(f"Failed to process post {post.id}: {e}")
+                    continue
+            
+            # Commit all changes
+            db.commit()
+            
+            remaining_posts = total_posts - processed_count
+            
+            return {
+                "success": True,
+                "message": f"Successfully generated AI summaries for {processed_count} posts",
+                "total_posts_needing_analysis": total_posts,
+                "processed_this_batch": processed_count,
+                "remaining_posts": remaining_posts,
+                "progress_percent": round((processed_count / total_posts) * 100, 1) if total_posts > 0 else 100,
+                "errors": errors if errors else None,
+                "continue_analysis": remaining_posts > 0,
+                "recommended_next_batch": min(batch_size, remaining_posts),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Bulk AI summary generation failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/update-resolution-status")
 async def update_resolution_status_for_existing_posts():
     """Update resolution_status field for existing posts based on has_accepted_solution"""
