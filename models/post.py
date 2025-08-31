@@ -75,6 +75,13 @@ class PostBase(BaseModel):
     thread_data: Optional[Dict[str, Any]] = Field(None)  # Full thread analysis
     has_accepted_solution: bool = Field(False)
     total_replies: int = Field(0)
+    
+    # AI-generated summary fields
+    ai_summary: Optional[str] = Field(None, max_length=500)  # AI-generated concise summary
+    ai_category: Optional[str] = Field(None, max_length=50)  # AI-determined category
+    ai_key_points: Optional[List[str]] = Field(default_factory=list)  # Key points from AI analysis
+    ai_action_required: Optional[str] = Field(None, max_length=20)  # high, medium, low, none
+    ai_hashtags: Optional[List[str]] = Field(default_factory=list)  # AI-generated hashtags
 
 class PostCreate(PostBase):
     pass

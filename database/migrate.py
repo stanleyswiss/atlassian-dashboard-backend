@@ -49,7 +49,12 @@ def migrate_database():
         "mentioned_products TEXT", # JSON stored as text
         "thread_data TEXT", # Full thread/reply data
         "has_accepted_solution BOOLEAN DEFAULT FALSE", # Quick flag for solution status
-        "total_replies INTEGER DEFAULT 0" # Number of replies in thread
+        "total_replies INTEGER DEFAULT 0", # Number of replies in thread
+        "ai_summary TEXT", # AI-generated concise summary
+        "ai_category VARCHAR(50)", # AI-determined category
+        "ai_key_points TEXT", # JSON array of key points
+        "ai_action_required VARCHAR(20)", # high, medium, low, none
+        "ai_hashtags TEXT" # JSON array of hashtags
     ]
     
     column_names = [
@@ -65,7 +70,12 @@ def migrate_database():
         "mentioned_products",
         "thread_data",
         "has_accepted_solution",
-        "total_replies"
+        "total_replies",
+        "ai_summary",
+        "ai_category",
+        "ai_key_points",
+        "ai_action_required",
+        "ai_hashtags"
     ]
     
     with engine.connect() as conn:

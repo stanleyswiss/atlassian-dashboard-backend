@@ -535,3 +535,102 @@ async def get_available_categories():
 async def get_available_sentiments():
     """Get list of available sentiment labels"""
     return [sentiment.value for sentiment in SentimentLabel]
+
+@router.get("/with-summaries")
+async def get_posts_with_ai_summaries(
+    skip: int = Query(0, ge=0, description="Number of posts to skip"),
+    limit: int = Query(20, ge=1, le=50, description="Number of posts to return (max 50 for AI processing)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    sentiment: Optional[str] = Query(None, description="Filter by sentiment"),
+    db: Session = Depends(get_db)
+):
+    """Get posts with AI-generated summaries instead of full content"""
+    try:
+        from services.ai_analyzer import AIAnalyzer
+        
+        logger.info(f"Getting posts with AI summaries: skip={skip}, limit={limit}")
+        
+        # Validate parameters
+        if category and category not in [cat.value for cat in PostCategory]:
+            raise HTTPException(status_code=400, detail=f"Invalid category")
+            
+        if sentiment and sentiment not in [sent.value for sent in SentimentLabel]:
+            raise HTTPException(status_code=400, detail=f"Invalid sentiment")
+        
+        # Get posts from database
+        posts = PostOperations.get_posts(
+            db=db,
+            skip=skip,
+            limit=limit,
+            category=category,
+            sentiment=sentiment
+        )
+        
+        if not posts:
+            return []
+        
+        # Convert to dict format for AI processing
+        posts_data = []
+        for post in posts:
+            try:
+                post_dict = {
+                    'id': post.id,
+                    'title': post.title or '',
+                    'content': post.content or '',
+                    'author': post.author or '',
+                    'category': post.category or '',
+                    'url': str(post.url) if post.url else '',
+                    'date': post.date.isoformat() if post.date else None,
+                    'sentiment_score': post.sentiment_score,
+                    'sentiment_label': post.sentiment_label
+                }
+                posts_data.append(post_dict)
+            except Exception as e:
+                logger.error(f"Error converting post {post.id}: {e}")
+                continue
+        
+        # Generate AI summaries
+        analyzer = AIAnalyzer()
+        enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+        
+        logger.info(f"Generated AI summaries for {len(enhanced_posts)} posts")
+        return enhanced_posts
+        
+    except Exception as e:
+        logger.error(f"Error getting posts with AI summaries: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI summaries")
+
+@router.get("/hashtag/{hashtag}")
+async def get_posts_by_hashtag(
+    hashtag: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get posts that contain a specific hashtag in their AI analysis"""
+    try:
+        from database.models import PostDB
+        
+        # Search for posts containing the hashtag in AI hashtags field
+        posts = db.query(PostDB).filter(
+            PostDB.ai_hashtags.contains(hashtag.lower())
+        ).order_by(PostDB.date.desc())\
+         .offset(skip)\
+         .limit(limit)\
+         .all()
+        
+        # Convert to response format
+        response_posts = []
+        for post in posts:
+            try:
+                response_post = convert_db_post_to_response(post)
+                response_posts.append(response_post)
+            except Exception as e:
+                logger.error(f"Error converting post {post.id}: {e}")
+                continue
+        
+        return response_posts
+        
+    except Exception as e:
+        logger.error(f"Error getting posts by hashtag {hashtag}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get posts by hashtag")

@@ -36,6 +36,86 @@ class AIAnalyzer:
         """Simple sentiment analysis method for testing"""
         return await self.analyze_sentiment_single(text)
         
+    async def summarize_post(self, title: str, content: str) -> Dict[str, any]:
+        """Generate AI summary for a community post"""
+        try:
+            combined_text = f"Title: {title}\n\nContent: {content[:3000]}"  # Limit for API
+            
+            prompt = f"""
+Analyze this Atlassian community forum post and create a concise, actionable summary. Return a JSON response with:
+
+1. summary: A 2-3 sentence summary highlighting the key point, issue, or solution (max 200 chars)
+2. category: The type of post ("question", "issue", "solution", "announcement", "discussion", "feature_request")
+3. key_points: List of 2-4 main points or takeaways
+4. action_required: Whether this post needs attention ("high", "medium", "low", "none")
+5. hashtags: 3-5 relevant hashtags without # symbol (e.g., "jira", "permissions", "bug")
+
+Post content:
+{combined_text}
+
+Response format:
+{{
+    "summary": "User reports Jira workflow permissions issue affecting team productivity. Looking for configuration help.",
+    "category": "issue",
+    "key_points": ["Workflow permissions broken", "Affects entire team", "Needs urgent fix"],
+    "action_required": "high",
+    "hashtags": ["jira", "workflow", "permissions", "productivity", "urgent"]
+}}
+"""
+
+            response = await self.client.chat.completions.create(
+                model=settings.openai_model,
+                messages=[
+                    {"role": "system", "content": "You are an expert at summarizing technical forum posts. Create concise, actionable summaries that highlight the most important information. Always return valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=400
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            try:
+                result = json.loads(result_text)
+                
+                # Validate and clean up
+                result['summary'] = result.get('summary', 'Summary unavailable')[:200]
+                result['category'] = result.get('category', 'discussion').lower()
+                result['key_points'] = result.get('key_points', [])[:4]  # Max 4 points
+                result['action_required'] = result.get('action_required', 'low').lower()
+                result['hashtags'] = [tag.lower().replace('#', '') for tag in result.get('hashtags', [])[:5]]
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse AI summary response as JSON: {e}")
+                return self._fallback_summary(title, content)
+                
+        except Exception as e:
+            logger.error(f"Error in AI post summarization: {e}")
+            return self._fallback_summary(title, content)
+
+    def _fallback_summary(self, title: str, content: str) -> Dict[str, any]:
+        """Fallback summary when AI fails"""
+        # Extract first sentence or two from content
+        sentences = content.split('. ')
+        summary = sentences[0][:150] + ('...' if len(sentences[0]) > 150 else '')
+        if not summary.strip():
+            summary = title[:150]
+        
+        # Simple keyword-based hashtags
+        text_lower = f"{title} {content}".lower()
+        potential_tags = ['jira', 'confluence', 'bitbucket', 'jsm', 'bug', 'feature', 'help', 'question', 'issue']
+        hashtags = [tag for tag in potential_tags if tag in text_lower][:5]
+        
+        return {
+            'summary': summary,
+            'category': 'discussion',
+            'key_points': [summary],
+            'action_required': 'medium',
+            'hashtags': hashtags
+        }
+
     async def analyze_sentiment_single(self, text: str) -> Dict[str, any]:
         """Analyze sentiment for a single text"""
         try:
@@ -304,6 +384,60 @@ Format:
         
         logger.info(f"✅ Complete analysis finished. Avg sentiment: {avg_sentiment:.2f}")
         return result
+
+    async def analyze_posts_with_summaries(self, posts: List[Dict]) -> List[Dict]:
+        """Analyze posts and generate AI summaries for each"""
+        logger.info(f"🤖 Generating AI summaries for {len(posts)} posts")
+        
+        enhanced_posts = []
+        
+        for i, post in enumerate(posts):
+            try:
+                # Generate AI summary
+                summary_result = await self.summarize_post(
+                    post.get('title', ''), 
+                    post.get('content', '')
+                )
+                
+                # Create enhanced post with summary
+                enhanced_post = {
+                    **post,
+                    'ai_summary': summary_result['summary'],
+                    'ai_category': summary_result['category'],
+                    'ai_key_points': summary_result['key_points'],
+                    'ai_action_required': summary_result['action_required'],
+                    'ai_hashtags': summary_result['hashtags']
+                }
+                enhanced_posts.append(enhanced_post)
+                
+                # Log progress every 10 posts
+                if (i + 1) % 10 == 0:
+                    logger.info(f"📝 Generated summaries for {i + 1}/{len(posts)} posts")
+                
+                # Rate limiting to avoid API limits
+                if i < len(posts) - 1:
+                    await asyncio.sleep(0.5)
+                    
+            except Exception as e:
+                logger.error(f"Error summarizing post {i}: {e}")
+                # Add fallback summary
+                fallback_summary = self._fallback_summary(
+                    post.get('title', ''), 
+                    post.get('content', '')
+                )
+                enhanced_post = {
+                    **post,
+                    **fallback_summary,
+                    'ai_summary': fallback_summary['summary'],
+                    'ai_category': fallback_summary['category'],
+                    'ai_key_points': fallback_summary['key_points'],
+                    'ai_action_required': fallback_summary['action_required'],
+                    'ai_hashtags': fallback_summary['hashtags']
+                }
+                enhanced_posts.append(enhanced_post)
+        
+        logger.info(f"✅ AI summarization completed for {len(enhanced_posts)} posts")
+        return enhanced_posts
 
 # Helper function for easy usage
 async def analyze_community_posts(posts: List[Dict], api_key: Optional[str] = None) -> Dict[str, any]:
