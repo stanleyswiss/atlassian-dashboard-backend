@@ -627,7 +627,7 @@ async def bulk_generate_ai_summaries(batch_size: int = 20):
     try:
         logger.info(f"🤖 Starting bulk AI summary generation (batch size: {batch_size})")
         
-        from database import get_session
+        from database.connection import get_session
         from database.models import PostDB
         from services.ai_analyzer import AIAnalyzer
         import json

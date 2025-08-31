@@ -220,7 +220,7 @@ class TaskScheduler:
         
         try:
             # Get posts without AI summaries (ai_summary is null)
-            from database import get_session
+            from database.connection import get_session
             from database.models import PostDB
             
             with get_session() as db:
