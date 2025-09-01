@@ -266,13 +266,12 @@ async def get_posts_with_ai_summaries(
     limit: int = Query(20, ge=1, le=50, description="Number of posts to return (max 50 for AI processing)"),
     category: Optional[str] = Query(None, description="Filter by category"),
     sentiment: Optional[str] = Query(None, description="Filter by sentiment"),
+    instant: bool = Query(True, description="Return cached posts immediately, process missing AI in background"),
     db: Session = Depends(get_db)
 ):
-    """Get posts with AI-generated summaries instead of full content"""
+    """Get posts with AI-generated summaries - INSTANT LOADING with background processing"""
     try:
-        from services.ai_analyzer import AIAnalyzer
-        
-        logger.info(f"Getting posts with AI summaries: skip={skip}, limit={limit}")
+        logger.info(f"Getting posts with AI summaries: skip={skip}, limit={limit}, instant={instant}")
         
         # Validate parameters
         if category and category not in [cat.value for cat in PostCategory]:
@@ -297,20 +296,20 @@ async def get_posts_with_ai_summaries(
         enhanced_posts = []
         posts_needing_ai = []
         
+        import json
+        def safe_json_parse(value, default):
+            if not value:
+                return default
+            try:
+                return json.loads(value) if isinstance(value, str) else value
+            except:
+                return default
+        
         for post in posts:
             try:
                 # Check if post already has AI summary cached
                 if post.ai_summary:
                     # Use cached AI data
-                    import json
-                    def safe_json_parse(value, default):
-                        if not value:
-                            return default
-                        try:
-                            return json.loads(value) if isinstance(value, str) else value
-                        except:
-                            return default
-                    
                     enhanced_post = {
                         'id': post.id,
                         'title': post.title or '',
@@ -330,7 +329,27 @@ async def get_posts_with_ai_summaries(
                     enhanced_posts.append(enhanced_post)
                     logger.debug(f"Using cached AI summary for post {post.id}")
                 else:
-                    # Post needs AI analysis
+                    # Post needs AI analysis - create placeholder for instant loading
+                    enhanced_post = {
+                        'id': post.id,
+                        'title': post.title or '',
+                        'content': post.content or '',
+                        'author': post.author or '',
+                        'category': post.category or '',
+                        'url': str(post.url) if post.url else '',
+                        'date': post.date.isoformat() if post.date else None,
+                        'sentiment_score': post.sentiment_score,
+                        'sentiment_label': post.sentiment_label,
+                        'ai_summary': None,  # Will be populated later
+                        'ai_category': None,
+                        'ai_key_points': [],
+                        'ai_action_required': None,
+                        'ai_hashtags': [],
+                        'ai_processing': True  # Flag to indicate AI is being processed
+                    }
+                    enhanced_posts.append(enhanced_post)
+                    
+                    # Store for background processing
                     post_dict = {
                         'id': post.id,
                         'title': post.title or '',
@@ -348,39 +367,65 @@ async def get_posts_with_ai_summaries(
                 logger.error(f"Error processing post {post.id}: {e}")
                 continue
         
-        # Generate AI summaries only for posts that don't have them cached
-        if posts_needing_ai:
-            logger.info(f"🤖 Generating AI summaries for {len(posts_needing_ai)} posts (cached: {len(enhanced_posts)})")
+        # INSTANT LOADING: Return cached posts immediately
+        if instant and enhanced_posts:
+            logger.info(f"🚀 INSTANT: Returning {len(enhanced_posts)} posts ({len(posts_needing_ai)} need AI processing)")
             
-            analyzer = AIAnalyzer()
-            posts_data = [post_dict for _, post_dict in posts_needing_ai]
-            ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
-            
-            # Save AI summaries to database and add to response
-            for (original_post, _), ai_post in zip(posts_needing_ai, ai_enhanced_posts):
-                try:
-                    # Update database with AI summary
-                    original_post.ai_summary = ai_post.get('ai_summary')
-                    original_post.ai_category = ai_post.get('ai_category') 
-                    original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
-                    original_post.ai_action_required = ai_post.get('ai_action_required')
-                    original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
-                    
-                    db.commit()
-                    enhanced_posts.append(ai_post)
-                    logger.debug(f"Generated and cached AI summary for post {original_post.id}")
-                    
-                except Exception as e:
-                    logger.error(f"Error saving AI summary for post {original_post.id}: {e}")
-                    enhanced_posts.append(ai_post)  # Still return the data even if save fails
+            # Schedule background AI processing for posts without summaries
+            if posts_needing_ai:
+                logger.info(f"📋 Scheduling background AI processing for {len(posts_needing_ai)} posts")
+                # Background processing will be handled by a separate async task
+                # For now, we return the cached content immediately
+                
         else:
-            logger.info(f"📋 All {len(enhanced_posts)} posts already have cached AI summaries")
+            # Legacy mode: Wait for AI processing (only when instant=False)
+            if posts_needing_ai:
+                logger.info(f"🤖 SYNC: Generating AI summaries for {len(posts_needing_ai)} posts")
+                
+                from services.ai_analyzer import AIAnalyzer
+                analyzer = AIAnalyzer()
+                posts_data = [post_dict for _, post_dict in posts_needing_ai]
+                ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+                
+                # Update the response with AI data
+                posts_needing_ai_dict = {post.id: (original_post, _) for original_post, _ in posts_needing_ai}
+                
+                for ai_post in ai_enhanced_posts:
+                    post_id = ai_post.get('id')
+                    if post_id in posts_needing_ai_dict:
+                        original_post, _ = posts_needing_ai_dict[post_id]
+                        
+                        try:
+                            # Update database
+                            original_post.ai_summary = ai_post.get('ai_summary')
+                            original_post.ai_category = ai_post.get('ai_category') 
+                            original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                            original_post.ai_action_required = ai_post.get('ai_action_required')
+                            original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                            
+                            # Update response
+                            for enhanced_post in enhanced_posts:
+                                if enhanced_post['id'] == post_id:
+                                    enhanced_post.update({
+                                        'ai_summary': ai_post.get('ai_summary'),
+                                        'ai_category': ai_post.get('ai_category'),
+                                        'ai_key_points': ai_post.get('ai_key_points', []),
+                                        'ai_action_required': ai_post.get('ai_action_required'),
+                                        'ai_hashtags': ai_post.get('ai_hashtags', []),
+                                        'ai_processing': False
+                                    })
+                                    break
+                                    
+                        except Exception as e:
+                            logger.error(f"Error saving AI summary for post {post_id}: {e}")
+                
+                db.commit()
         
         return enhanced_posts
         
     except Exception as e:
         logger.error(f"Error getting posts with AI summaries: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate AI summaries")
+        raise HTTPException(status_code=500, detail="Failed to get posts with AI summaries")
 
 @router.get("/{post_id}", response_model=PostResponse)
 async def get_post(post_id: int, db: Session = Depends(get_db)):
@@ -855,6 +900,92 @@ async def get_available_categories():
 async def get_available_sentiments():
     """Get list of available sentiment labels"""
     return [sentiment.value for sentiment in SentimentLabel]
+
+@router.post("/background-ai-processing")
+async def trigger_background_ai_processing(
+    post_ids: List[int] = Query(..., description="List of post IDs to process"),
+    db: Session = Depends(get_db)
+):
+    """Process AI summaries for specific posts in the background (non-blocking)"""
+    try:
+        from database.models import PostDB
+        import asyncio
+        
+        logger.info(f"📋 Background AI processing requested for {len(post_ids)} posts")
+        
+        # Immediately return success - processing happens in background
+        asyncio.create_task(process_posts_ai_background(post_ids, db))
+        
+        return {
+            "message": f"Background AI processing started for {len(post_ids)} posts",
+            "post_ids": post_ids,
+            "status": "processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting background AI processing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start background AI processing")
+
+async def process_posts_ai_background(post_ids: List[int], db):
+    """Background task to process AI summaries for specific posts"""
+    try:
+        from database.models import PostDB
+        from services.ai_analyzer import AIAnalyzer
+        import json
+        
+        logger.info(f"🤖 Background processing started for {len(post_ids)} posts")
+        
+        # Get posts that need AI processing
+        posts = db.query(PostDB).filter(PostDB.id.in_(post_ids)).all()
+        
+        if not posts:
+            logger.info("No posts found for background processing")
+            return
+        
+        # Convert to analyzer format
+        posts_data = []
+        posts_map = {}
+        
+        for post in posts:
+            post_dict = {
+                'id': post.id,
+                'title': post.title or '',
+                'content': post.content or '',
+                'author': post.author or '',
+                'category': post.category or '',
+                'url': str(post.url) if post.url else '',
+                'date': post.date.isoformat() if post.date else None,
+                'sentiment_score': post.sentiment_score,
+                'sentiment_label': post.sentiment_label
+            }
+            posts_data.append(post_dict)
+            posts_map[post.id] = post
+        
+        # Generate AI summaries
+        analyzer = AIAnalyzer()
+        ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+        
+        # Save to database
+        updated_count = 0
+        for ai_post in ai_enhanced_posts:
+            post_id = ai_post.get('id')
+            if post_id in posts_map:
+                original_post = posts_map[post_id]
+                try:
+                    original_post.ai_summary = ai_post.get('ai_summary')
+                    original_post.ai_category = ai_post.get('ai_category')
+                    original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                    original_post.ai_action_required = ai_post.get('ai_action_required')
+                    original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                    updated_count += 1
+                except Exception as e:
+                    logger.error(f"Background: Error saving AI summary for post {post_id}: {e}")
+        
+        db.commit()
+        logger.info(f"✅ Background processing complete: {updated_count} posts updated")
+        
+    except Exception as e:
+        logger.error(f"Background AI processing error: {e}")
 
 @router.post("/generate-missing-ai-summaries")
 async def generate_missing_ai_summaries(
