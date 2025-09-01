@@ -374,8 +374,16 @@ async def get_posts_with_ai_summaries(
             # Schedule background AI processing for posts without summaries
             if posts_needing_ai:
                 logger.info(f"📋 Scheduling background AI processing for {len(posts_needing_ai)} posts")
-                # Background processing will be handled by a separate async task
-                # For now, we return the cached content immediately
+                
+                # Trigger actual background processing
+                import asyncio
+                from database import get_db
+                
+                post_ids = [post.id for post, _ in posts_needing_ai]
+                # Create a new database session for background processing
+                asyncio.create_task(process_posts_ai_background_safe(post_ids))
+                
+                logger.info(f"🤖 Background AI processing started for posts: {post_ids}")
                 
         else:
             # Legacy mode: Wait for AI processing (only when instant=False)
@@ -926,66 +934,78 @@ async def trigger_background_ai_processing(
         logger.error(f"Error starting background AI processing: {e}")
         raise HTTPException(status_code=500, detail="Failed to start background AI processing")
 
-async def process_posts_ai_background(post_ids: List[int], db):
-    """Background task to process AI summaries for specific posts"""
+async def process_posts_ai_background_safe(post_ids: List[int]):
+    """Safe background task with its own database session"""
     try:
+        from database import get_db
         from database.models import PostDB
         from services.ai_analyzer import AIAnalyzer
         import json
         
         logger.info(f"🤖 Background processing started for {len(post_ids)} posts")
         
-        # Get posts that need AI processing
-        posts = db.query(PostDB).filter(PostDB.id.in_(post_ids)).all()
+        # Create new database session for background task
+        db = next(get_db())
         
-        if not posts:
-            logger.info("No posts found for background processing")
-            return
-        
-        # Convert to analyzer format
-        posts_data = []
-        posts_map = {}
-        
-        for post in posts:
-            post_dict = {
-                'id': post.id,
-                'title': post.title or '',
-                'content': post.content or '',
-                'author': post.author or '',
-                'category': post.category or '',
-                'url': str(post.url) if post.url else '',
-                'date': post.date.isoformat() if post.date else None,
-                'sentiment_score': post.sentiment_score,
-                'sentiment_label': post.sentiment_label
-            }
-            posts_data.append(post_dict)
-            posts_map[post.id] = post
-        
-        # Generate AI summaries
-        analyzer = AIAnalyzer()
-        ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
-        
-        # Save to database
-        updated_count = 0
-        for ai_post in ai_enhanced_posts:
-            post_id = ai_post.get('id')
-            if post_id in posts_map:
-                original_post = posts_map[post_id]
-                try:
-                    original_post.ai_summary = ai_post.get('ai_summary')
-                    original_post.ai_category = ai_post.get('ai_category')
-                    original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
-                    original_post.ai_action_required = ai_post.get('ai_action_required')
-                    original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
-                    updated_count += 1
-                except Exception as e:
-                    logger.error(f"Background: Error saving AI summary for post {post_id}: {e}")
-        
-        db.commit()
-        logger.info(f"✅ Background processing complete: {updated_count} posts updated")
+        try:
+            # Get posts that need AI processing
+            posts = db.query(PostDB).filter(PostDB.id.in_(post_ids)).all()
+            
+            if not posts:
+                logger.info("No posts found for background processing")
+                return
+            
+            # Convert to analyzer format
+            posts_data = []
+            posts_map = {}
+            
+            for post in posts:
+                post_dict = {
+                    'id': post.id,
+                    'title': post.title or '',
+                    'content': post.content or '',
+                    'author': post.author or '',
+                    'category': post.category or '',
+                    'url': str(post.url) if post.url else '',
+                    'date': post.date.isoformat() if post.date else None,
+                    'sentiment_score': post.sentiment_score,
+                    'sentiment_label': post.sentiment_label
+                }
+                posts_data.append(post_dict)
+                posts_map[post.id] = post
+            
+            # Generate AI summaries
+            analyzer = AIAnalyzer()
+            ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+            
+            # Save to database
+            updated_count = 0
+            for ai_post in ai_enhanced_posts:
+                post_id = ai_post.get('id')
+                if post_id in posts_map:
+                    original_post = posts_map[post_id]
+                    try:
+                        original_post.ai_summary = ai_post.get('ai_summary')
+                        original_post.ai_category = ai_post.get('ai_category')
+                        original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                        original_post.ai_action_required = ai_post.get('ai_action_required')
+                        original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                        updated_count += 1
+                    except Exception as e:
+                        logger.error(f"Background: Error saving AI summary for post {post_id}: {e}")
+            
+            db.commit()
+            logger.info(f"✅ Background processing complete: {updated_count} posts updated")
+            
+        finally:
+            db.close()
         
     except Exception as e:
         logger.error(f"Background AI processing error: {e}")
+
+async def process_posts_ai_background(post_ids: List[int], db):
+    """Legacy background task - kept for compatibility"""
+    await process_posts_ai_background_safe(post_ids)
 
 @router.post("/generate-missing-ai-summaries")
 async def generate_missing_ai_summaries(
