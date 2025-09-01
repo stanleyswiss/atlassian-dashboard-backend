@@ -30,10 +30,18 @@ class CloudNewsScraper:
     def _generate_current_urls(self) -> List[str]:
         """Generate URLs for recent Cloud changes blog posts"""
         urls = []
+        
+        # Add known working URLs first (fallback for when dynamic generation fails)
+        known_urls = [
+            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-21-to-jul-28-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-14-to-jul-20-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-7-to-jul-13-2025",
+        ]
+        
         now = datetime.now()
         
         # Generate URLs for the past few weeks
-        for weeks_back in range(4):  # Check last 4 weeks
+        for weeks_back in range(6):  # Check last 6 weeks to increase chances
             target_date = now - timedelta(weeks=weeks_back)
             
             # Calculate week start (Monday) and end (Sunday)
@@ -41,20 +49,46 @@ class CloudNewsScraper:
             week_start = target_date - timedelta(days=days_since_monday)
             week_end = week_start + timedelta(days=6)
             
-            # Format date range string
+            # Format date range string (try different formats)
+            formats_to_try = []
+            
+            # Format 1: jul-21-to-jul-28
             if week_start.month == week_end.month:
                 date_range = f"{week_start.strftime('%b').lower()}-{week_start.day}-to-{week_start.strftime('%b').lower()}-{week_end.day}"
             else:
                 date_range = f"{week_start.strftime('%b').lower()}-{week_start.day}-to-{week_end.strftime('%b').lower()}-{week_end.day}"
+            formats_to_try.append(date_range)
             
-            url = self.base_url_pattern.format(
-                year=target_date.year,
-                month=target_date.month,
-                date_range=date_range
-            )
-            urls.append(url)
+            # Format 2: jul-21-jul-28 (without "to")
+            if week_start.month == week_end.month:
+                date_range2 = f"{week_start.strftime('%b').lower()}-{week_start.day}-{week_start.strftime('%b').lower()}-{week_end.day}"
+            else:
+                date_range2 = f"{week_start.strftime('%b').lower()}-{week_start.day}-{week_end.strftime('%b').lower()}-{week_end.day}"
+            formats_to_try.append(date_range2)
+            
+            for date_range in formats_to_try:
+                url = self.base_url_pattern.format(
+                    year=target_date.year,
+                    month=target_date.month,
+                    date_range=date_range
+                )
+                urls.append(url)
         
-        return urls
+        # Add known URLs at the end as final fallback
+        for known_url in known_urls:
+            if known_url not in urls:
+                urls.append(known_url)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_urls = []
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                unique_urls.append(url)
+        
+        logger.info(f"Generated {len(unique_urls)} URLs to check for Cloud News")
+        return unique_urls
     
     def fetch_html(self, url: str) -> Optional[str]:
         """Fetch HTML content from URL"""
