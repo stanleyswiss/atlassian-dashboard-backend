@@ -28,67 +28,60 @@ class CloudNewsScraper:
         self.current_urls = self._generate_current_urls()
         
     def _generate_current_urls(self) -> List[str]:
-        """Generate URLs for recent Cloud changes blog posts"""
+        """Generate URLs for recent Cloud changes blog posts by scraping the main blog page"""
         urls = []
         
-        # Add known working URLs first (fallback for when dynamic generation fails)
-        known_urls = [
-            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-21-to-jul-28-2025",
-            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-14-to-jul-20-2025",
-            "https://confluence.atlassian.com/cloud/blog/2025/07/atlassian-cloud-changes-jul-7-to-jul-13-2025",
+        try:
+            # First, fetch the main blog page to get current week entries
+            main_blog_url = "https://confluence.atlassian.com/cloud/blog/2025"
+            logger.info(f"Fetching main blog page: {main_blog_url}")
+            
+            html_content = self.fetch_html(main_blog_url)
+            if html_content:
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # Find all links that match the pattern "atlassian-cloud-changes-"
+                cloud_change_links = soup.find_all('a', href=lambda h: h and 'atlassian-cloud-changes-' in h)
+                
+                for link in cloud_change_links:
+                    href = link.get('href', '')
+                    if href.startswith('/cloud/blog/'):
+                        full_url = f"https://confluence.atlassian.com{href}"
+                        urls.append(full_url)
+                        logger.info(f"Found current blog entry: {full_url}")
+                
+                logger.info(f"Found {len(urls)} current blog entries from main page")
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch from main blog page: {e}")
+        
+        # Fallback: Add known working URLs if we didn't find any or as backup
+        fallback_urls = [
+            "https://confluence.atlassian.com/cloud/blog/2025/09/atlassian-cloud-changes-aug-25-to-sep-1-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/08/atlassian-cloud-changes-aug-18-to-aug-25-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/08/atlassian-cloud-changes-aug-11-to-aug-18-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/08/atlassian-cloud-changes-aug-4-to-aug-11-2025",
+            "https://confluence.atlassian.com/cloud/blog/2025/08/atlassian-cloud-changes-jul-28-to-aug-4-2025",
         ]
         
-        now = datetime.now()
+        # If we found URLs from the main page, prioritize recent ones and add fallbacks for backup
+        if urls:
+            # Sort URLs to get most recent first (newest dates)
+            urls = sorted(set(urls), reverse=True)
+            # Add fallbacks for additional coverage
+            for fallback_url in fallback_urls:
+                if fallback_url not in urls:
+                    urls.append(fallback_url)
+        else:
+            # If main page scraping failed, use fallbacks entirely
+            logger.warning("Using fallback URLs as main page scraping failed")
+            urls = fallback_urls
         
-        # Generate URLs for the past few weeks
-        for weeks_back in range(6):  # Check last 6 weeks to increase chances
-            target_date = now - timedelta(weeks=weeks_back)
-            
-            # Calculate week start (Monday) and end (Sunday)
-            days_since_monday = target_date.weekday()
-            week_start = target_date - timedelta(days=days_since_monday)
-            week_end = week_start + timedelta(days=6)
-            
-            # Format date range string (try different formats)
-            formats_to_try = []
-            
-            # Format 1: jul-21-to-jul-28
-            if week_start.month == week_end.month:
-                date_range = f"{week_start.strftime('%b').lower()}-{week_start.day}-to-{week_start.strftime('%b').lower()}-{week_end.day}"
-            else:
-                date_range = f"{week_start.strftime('%b').lower()}-{week_start.day}-to-{week_end.strftime('%b').lower()}-{week_end.day}"
-            formats_to_try.append(date_range)
-            
-            # Format 2: jul-21-jul-28 (without "to")
-            if week_start.month == week_end.month:
-                date_range2 = f"{week_start.strftime('%b').lower()}-{week_start.day}-{week_start.strftime('%b').lower()}-{week_end.day}"
-            else:
-                date_range2 = f"{week_start.strftime('%b').lower()}-{week_start.day}-{week_end.strftime('%b').lower()}-{week_end.day}"
-            formats_to_try.append(date_range2)
-            
-            for date_range in formats_to_try:
-                url = self.base_url_pattern.format(
-                    year=target_date.year,
-                    month=target_date.month,
-                    date_range=date_range
-                )
-                urls.append(url)
+        # Limit to reasonable number to avoid overwhelming the system
+        urls = urls[:10]
         
-        # Add known URLs at the end as final fallback
-        for known_url in known_urls:
-            if known_url not in urls:
-                urls.append(known_url)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_urls = []
-        for url in urls:
-            if url not in seen:
-                seen.add(url)
-                unique_urls.append(url)
-        
-        logger.info(f"Generated {len(unique_urls)} URLs to check for Cloud News")
-        return unique_urls
+        logger.info(f"Final URL list: {len(urls)} URLs to check for Cloud News")
+        return urls
     
     def fetch_html(self, url: str) -> Optional[str]:
         """Fetch HTML content from URL"""
