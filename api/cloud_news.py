@@ -165,7 +165,7 @@ async def get_cloud_news_item(news_id: int, db: Session = Depends(get_db)):
 @router.post("/scrape")
 async def trigger_cloud_news_scrape(
     background_tasks: BackgroundTasks,
-    days_back: int = Query(7, ge=1, le=30, description="Number of days to look back for news")
+    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back for news")
 ):
     """Trigger cloud news scraping in the background"""
     try:

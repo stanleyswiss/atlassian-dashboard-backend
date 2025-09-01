@@ -177,7 +177,7 @@ async def get_release_note(release_id: int, db: Session = Depends(get_db)):
 @router.post("/scrape")
 async def trigger_release_notes_scrape(
     background_tasks: BackgroundTasks,
-    days_back: int = Query(7, ge=1, le=30, description="Number of days to look back for releases")
+    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back for releases")
 ):
     """Trigger release notes scraping in the background"""
     try:
