@@ -103,3 +103,64 @@ class TrendDB(Base):
     last_seen = Column(DateTime, nullable=False, default=func.now())
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+class ReleaseNoteDB(Base):
+    __tablename__ = "release_notes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Product information
+    product_name = Column(String(200), nullable=False, index=True)  # "Jira", "Confluence", "ScriptRunner for Jira", etc.
+    product_type = Column(String(50), nullable=False, index=True)  # "atlassian_product", "marketplace_app"
+    product_id = Column(String(50), nullable=True, index=True)  # App ID for marketplace apps
+    
+    # Version information
+    version = Column(String(100), nullable=False, index=True)
+    build_number = Column(String(50), nullable=True)
+    release_date = Column(DateTime, nullable=False, index=True)
+    
+    # Release details
+    release_summary = Column(Text, nullable=True)
+    release_notes = Column(Text, nullable=True)  # HTML content of release notes
+    release_notes_url = Column(String(1000), nullable=True)
+    download_url = Column(String(1000), nullable=True)
+    
+    # Analysis fields
+    ai_summary = Column(Text, nullable=True)  # AI-generated summary
+    ai_key_changes = Column(Text, nullable=True)  # JSON array of key changes
+    ai_impact_level = Column(String(20), nullable=True)  # high, medium, low
+    ai_categories = Column(Text, nullable=True)  # JSON array ["bug_fix", "new_feature", "security"]
+    
+    # Filtering helpers
+    is_major_release = Column(Boolean, default=False)
+    is_security_release = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+class CloudNewsDB(Base):
+    __tablename__ = "cloud_news"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Source information
+    source_url = Column(String(1000), nullable=False, unique=True)
+    blog_date = Column(DateTime, nullable=False, index=True)
+    blog_title = Column(String(500), nullable=False)
+    
+    # Feature information
+    feature_title = Column(String(300), nullable=False, index=True)
+    feature_content = Column(Text, nullable=False)  # HTML content
+    feature_type = Column(String(20), nullable=False, index=True)  # "NEW_THIS_WEEK", "COMING_SOON"
+    product_area = Column(String(100), nullable=True, index=True)  # "Jira", "Confluence", "Bitbucket", etc.
+    
+    # Analysis fields
+    ai_summary = Column(Text, nullable=True)
+    ai_impact_description = Column(Text, nullable=True)
+    ai_target_audience = Column(String(100), nullable=True)  # "administrators", "end_users", "developers"
+    ai_tags = Column(Text, nullable=True)  # JSON array of tags
+    
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

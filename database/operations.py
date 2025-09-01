@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_, func, text
-from .models import PostDB, AnalyticsDB, TrendDB
+from .models import PostDB, AnalyticsDB, TrendDB, ReleaseNoteDB, CloudNewsDB
 from .connection import get_session
 from models import Post, PostCreate, PostUpdate
 
@@ -364,3 +364,226 @@ class DatabaseOperations:
         except Exception as e:
             print(f"Database health check failed: {e}")
             return False
+
+class ReleaseNoteOperations:
+    """Database operations for Release Notes"""
+    
+    @staticmethod
+    def create_release_note(db: Session, release_data: Dict[str, Any]) -> ReleaseNoteDB:
+        """Create a new release note entry"""
+        import json
+        
+        db_release = ReleaseNoteDB(
+            product_name=release_data['product_name'],
+            product_type=release_data['product_type'],
+            product_id=release_data.get('product_id'),
+            version=release_data['version'],
+            build_number=release_data.get('build_number'),
+            release_date=release_data['release_date'],
+            release_summary=release_data.get('release_summary'),
+            release_notes=release_data.get('release_notes'),
+            release_notes_url=release_data.get('release_notes_url'),
+            download_url=release_data.get('download_url'),
+            is_major_release=release_data.get('is_major_release', False),
+            is_security_release=release_data.get('is_security_release', False)
+        )
+        
+        db.add(db_release)
+        db.commit()
+        db.refresh(db_release)
+        return db_release
+    
+    @staticmethod
+    def get_release_notes(
+        db: Session,
+        skip: int = 0,
+        limit: int = 50,
+        product_type: Optional[str] = None,
+        product_name: Optional[str] = None,
+        days_back: int = 7,
+        major_releases_only: bool = False,
+        security_releases_only: bool = False
+    ) -> List[ReleaseNoteDB]:
+        """Get release notes with filtering"""
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        
+        query = db.query(ReleaseNoteDB).filter(ReleaseNoteDB.release_date >= cutoff_date)
+        
+        if product_type:
+            query = query.filter(ReleaseNoteDB.product_type == product_type)
+        
+        if product_name:
+            query = query.filter(ReleaseNoteDB.product_name.contains(product_name))
+        
+        if major_releases_only:
+            query = query.filter(ReleaseNoteDB.is_major_release == True)
+        
+        if security_releases_only:
+            query = query.filter(ReleaseNoteDB.is_security_release == True)
+        
+        return query.order_by(desc(ReleaseNoteDB.release_date)).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_release_note(db: Session, release_id: int) -> Optional[ReleaseNoteDB]:
+        """Get a single release note by ID"""
+        return db.query(ReleaseNoteDB).filter(ReleaseNoteDB.id == release_id).first()
+    
+    @staticmethod
+    def update_release_note_ai_data(db: Session, release_id: int, ai_data: Dict[str, Any]) -> bool:
+        """Update AI analysis data for a release note"""
+        import json
+        
+        release = db.query(ReleaseNoteDB).filter(ReleaseNoteDB.id == release_id).first()
+        if not release:
+            return False
+        
+        release.ai_summary = ai_data.get('ai_summary')
+        release.ai_key_changes = json.dumps(ai_data.get('ai_key_changes', [])) if ai_data.get('ai_key_changes') else None
+        release.ai_impact_level = ai_data.get('ai_impact_level')
+        release.ai_categories = json.dumps(ai_data.get('ai_categories', [])) if ai_data.get('ai_categories') else None
+        
+        db.commit()
+        return True
+    
+    @staticmethod
+    def get_or_create_release_note(db: Session, release_data: Dict[str, Any]) -> ReleaseNoteDB:
+        """Get existing release note or create new one"""
+        existing = db.query(ReleaseNoteDB).filter(
+            and_(
+                ReleaseNoteDB.product_name == release_data['product_name'],
+                ReleaseNoteDB.version == release_data['version'],
+                ReleaseNoteDB.product_type == release_data['product_type']
+            )
+        ).first()
+        
+        if existing:
+            # Update existing with new data
+            for key, value in release_data.items():
+                if hasattr(existing, key) and key != 'id':
+                    setattr(existing, key, value)
+            existing.updated_at = datetime.now()
+            db.commit()
+            db.refresh(existing)
+            return existing
+        else:
+            return ReleaseNoteOperations.create_release_note(db, release_data)
+
+class CloudNewsOperations:
+    """Database operations for Cloud News"""
+    
+    @staticmethod
+    def create_cloud_news(db: Session, news_data: Dict[str, Any]) -> CloudNewsDB:
+        """Create a new cloud news entry"""
+        db_news = CloudNewsDB(
+            source_url=news_data['source_url'],
+            blog_date=news_data['blog_date'],
+            blog_title=news_data['blog_title'],
+            feature_title=news_data['feature_title'],
+            feature_content=news_data['feature_content'],
+            feature_type=news_data['feature_type'],
+            product_area=news_data.get('product_area')
+        )
+        
+        db.add(db_news)
+        db.commit()
+        db.refresh(db_news)
+        return db_news
+    
+    @staticmethod
+    def get_cloud_news(
+        db: Session,
+        skip: int = 0,
+        limit: int = 50,
+        feature_type: Optional[str] = None,
+        product_area: Optional[str] = None,
+        days_back: int = 7
+    ) -> List[CloudNewsDB]:
+        """Get cloud news with filtering"""
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        
+        query = db.query(CloudNewsDB).filter(CloudNewsDB.blog_date >= cutoff_date)
+        
+        if feature_type:
+            query = query.filter(CloudNewsDB.feature_type == feature_type)
+        
+        if product_area:
+            query = query.filter(CloudNewsDB.product_area.contains(product_area))
+        
+        return query.order_by(desc(CloudNewsDB.blog_date)).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_cloud_news_item(db: Session, news_id: int) -> Optional[CloudNewsDB]:
+        """Get a single cloud news item by ID"""
+        return db.query(CloudNewsDB).filter(CloudNewsDB.id == news_id).first()
+    
+    @staticmethod
+    def update_cloud_news_ai_data(db: Session, news_id: int, ai_data: Dict[str, Any]) -> bool:
+        """Update AI analysis data for cloud news"""
+        import json
+        
+        news = db.query(CloudNewsDB).filter(CloudNewsDB.id == news_id).first()
+        if not news:
+            return False
+        
+        news.ai_summary = ai_data.get('ai_summary')
+        news.ai_impact_description = ai_data.get('ai_impact_description')
+        news.ai_target_audience = ai_data.get('ai_target_audience')
+        news.ai_tags = json.dumps(ai_data.get('ai_tags', [])) if ai_data.get('ai_tags') else None
+        
+        db.commit()
+        return True
+    
+    @staticmethod
+    def get_or_create_cloud_news(db: Session, news_data: Dict[str, Any]) -> CloudNewsDB:
+        """Get existing cloud news or create new one"""
+        existing = db.query(CloudNewsDB).filter(
+            CloudNewsDB.source_url == news_data['source_url']
+        ).first()
+        
+        if existing:
+            # Update existing with new data
+            for key, value in news_data.items():
+                if hasattr(existing, key) and key != 'id':
+                    setattr(existing, key, value)
+            existing.updated_at = datetime.now()
+            db.commit()
+            db.refresh(existing)
+            return existing
+        else:
+            return CloudNewsOperations.create_cloud_news(db, news_data)
+    
+    @staticmethod
+    def get_cloud_news_stats(db: Session, days_back: int = 7) -> Dict[str, Any]:
+        """Get statistics for cloud news"""
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        
+        total_features = db.query(CloudNewsDB).filter(CloudNewsDB.blog_date >= cutoff_date).count()
+        new_this_week = db.query(CloudNewsDB).filter(
+            and_(CloudNewsDB.blog_date >= cutoff_date, CloudNewsDB.feature_type == "NEW_THIS_WEEK")
+        ).count()
+        coming_soon = db.query(CloudNewsDB).filter(
+            and_(CloudNewsDB.blog_date >= cutoff_date, CloudNewsDB.feature_type == "COMING_SOON")
+        ).count()
+        
+        # Product breakdown
+        product_stats = db.query(
+            CloudNewsDB.product_area,
+            func.count(CloudNewsDB.id).label('count')
+        ).filter(
+            CloudNewsDB.blog_date >= cutoff_date
+        ).group_by(CloudNewsDB.product_area).all()
+        
+        product_breakdown = {stat[0] or 'Unknown': stat[1] for stat in product_stats}
+        
+        # Recent updates
+        recent = db.query(CloudNewsDB).filter(
+            CloudNewsDB.blog_date >= cutoff_date
+        ).order_by(desc(CloudNewsDB.blog_date)).limit(5).all()
+        
+        return {
+            'total_features': total_features,
+            'new_this_week': new_this_week,
+            'coming_soon': coming_soon,
+            'product_breakdown': product_breakdown,
+            'recent_updates': recent
+        }

@@ -14,6 +14,8 @@ from api.admin import router as admin_router
 from api.roadmap import router as roadmap_router
 from api.forums import router as forums_router
 from api.diagnostic import router as diagnostic_router
+from api.release_notes import router as release_notes_router
+from api.cloud_news import router as cloud_news_router
 from scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,8 @@ app.include_router(admin_router)
 app.include_router(roadmap_router)
 app.include_router(forums_router)
 app.include_router(diagnostic_router)
+app.include_router(release_notes_router)
+app.include_router(cloud_news_router)
 
 @app.on_event("startup")
 async def startup_event():
