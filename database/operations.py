@@ -535,9 +535,12 @@ class CloudNewsOperations:
     
     @staticmethod
     def get_or_create_cloud_news(db: Session, news_data: Dict[str, Any]) -> CloudNewsDB:
-        """Get existing cloud news or create new one"""
+        """Get existing cloud news or create new one, using source_url + feature_title as unique constraint"""
         existing = db.query(CloudNewsDB).filter(
-            CloudNewsDB.source_url == news_data['source_url']
+            and_(
+                CloudNewsDB.source_url == news_data['source_url'],
+                CloudNewsDB.feature_title == news_data['feature_title']
+            )
         ).first()
         
         if existing:
