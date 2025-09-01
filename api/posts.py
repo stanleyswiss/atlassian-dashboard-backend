@@ -523,6 +523,85 @@ async def debug_conversion_test(db: Session = Depends(get_db)):
     except Exception as e:
         return {"error": str(e), "error_type": type(e).__name__}
 
+@router.get("/debug/ai-cache-stats")
+async def debug_ai_cache_stats(db: Session = Depends(get_db)):
+    """Debug endpoint to check AI cache status"""
+    try:
+        from database.models import PostDB
+        from sqlalchemy import func, and_, or_
+        
+        total_posts = db.query(func.count(PostDB.id)).scalar()
+        
+        # Posts with AI summaries
+        posts_with_ai = db.query(func.count(PostDB.id)).filter(
+            and_(
+                PostDB.ai_summary.isnot(None),
+                PostDB.ai_summary != '',
+                PostDB.ai_summary != 'null'
+            )
+        ).scalar()
+        
+        # Posts without AI summaries
+        posts_without_ai = total_posts - posts_with_ai
+        
+        # Breakdown by category
+        category_breakdown = db.query(
+            PostDB.category,
+            func.count(PostDB.id).label('total'),
+            func.sum(
+                func.case(
+                    (
+                        and_(
+                            PostDB.ai_summary.isnot(None),
+                            PostDB.ai_summary != '',
+                            PostDB.ai_summary != 'null'
+                        ), 1
+                    ),
+                    else_=0
+                )
+            ).label('with_ai')
+        ).group_by(PostDB.category).all()
+        
+        # Sample posts without AI summaries
+        sample_without_ai = db.query(PostDB).filter(
+            or_(
+                PostDB.ai_summary.is_(None),
+                PostDB.ai_summary == '',
+                PostDB.ai_summary == 'null'
+            )
+        ).limit(5).all()
+        
+        return {
+            "total_posts": total_posts,
+            "posts_with_ai_summaries": posts_with_ai,
+            "posts_without_ai_summaries": posts_without_ai,
+            "ai_cache_percentage": round((posts_with_ai / total_posts * 100), 2) if total_posts > 0 else 0,
+            "category_breakdown": [
+                {
+                    "category": stat[0],
+                    "total": stat[1],
+                    "with_ai": int(stat[2] or 0),
+                    "without_ai": stat[1] - int(stat[2] or 0),
+                    "ai_percentage": round((int(stat[2] or 0) / stat[1] * 100), 2) if stat[1] > 0 else 0
+                } for stat in category_breakdown
+            ],
+            "sample_posts_without_ai": [
+                {
+                    "id": post.id,
+                    "title": post.title[:50] if post.title else "No title",
+                    "category": post.category,
+                    "date": post.date.isoformat() if post.date else None,
+                    "has_ai_summary": bool(post.ai_summary),
+                    "url": post.url
+                } for post in sample_without_ai
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in AI cache debug endpoint: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
 @router.get("/debug/resolution-status")
 async def debug_resolution_status(db: Session = Depends(get_db)):
     """Debug endpoint to check resolution status distribution"""
@@ -598,6 +677,125 @@ async def search_posts_by_content(
         logger.error(f"Error searching posts: {e}")
         raise HTTPException(status_code=500, detail="Failed to search posts")
 
+@router.get("/search/with-summaries")
+async def search_posts_with_summaries(
+    query: str = Query(..., min_length=3, description="Search query (minimum 3 characters)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """Search posts by title and content with AI summaries"""
+    try:
+        from database.models import PostDB
+        from sqlalchemy import or_, func
+        import json
+        
+        logger.info(f"🔍 Searching posts with AI summaries: query='{query}', skip={skip}, limit={limit}")
+        
+        # Search in title and content
+        search_filter = or_(
+            PostDB.title.contains(query),
+            PostDB.content.contains(query)
+        )
+        
+        posts = db.query(PostDB).filter(search_filter)\
+                  .order_by(PostDB.date.desc())\
+                  .offset(skip)\
+                  .limit(limit)\
+                  .all()
+        
+        if not posts:
+            return []
+        
+        # Convert posts to response format, using cached AI summaries when available
+        enhanced_posts = []
+        posts_needing_ai = []
+        
+        for post in posts:
+            try:
+                # Check if post already has AI summary cached
+                if post.ai_summary:
+                    # Use cached AI data
+                    def safe_json_parse(value, default):
+                        if not value:
+                            return default
+                        try:
+                            return json.loads(value) if isinstance(value, str) else value
+                        except:
+                            return default
+                    
+                    enhanced_post = {
+                        'id': post.id,
+                        'title': post.title or '',
+                        'content': post.content or '',
+                        'author': post.author or '',
+                        'category': post.category or '',
+                        'url': str(post.url) if post.url else '',
+                        'date': post.date.isoformat() if post.date else None,
+                        'sentiment_score': post.sentiment_score,
+                        'sentiment_label': post.sentiment_label,
+                        'ai_summary': post.ai_summary,
+                        'ai_category': post.ai_category,
+                        'ai_key_points': safe_json_parse(post.ai_key_points, []),
+                        'ai_action_required': post.ai_action_required,
+                        'ai_hashtags': safe_json_parse(post.ai_hashtags, [])
+                    }
+                    enhanced_posts.append(enhanced_post)
+                    logger.debug(f"Using cached AI summary for searched post {post.id}")
+                else:
+                    # Post needs AI analysis
+                    post_dict = {
+                        'id': post.id,
+                        'title': post.title or '',
+                        'content': post.content or '',
+                        'author': post.author or '',
+                        'category': post.category or '',
+                        'url': str(post.url) if post.url else '',
+                        'date': post.date.isoformat() if post.date else None,
+                        'sentiment_score': post.sentiment_score,
+                        'sentiment_label': post.sentiment_label
+                    }
+                    posts_needing_ai.append((post, post_dict))
+                    
+            except Exception as e:
+                logger.error(f"Error processing searched post {post.id}: {e}")
+                continue
+        
+        # Generate AI summaries only for posts that don't have them cached
+        if posts_needing_ai:
+            logger.info(f"🤖 Generating AI summaries for {len(posts_needing_ai)} searched posts (cached: {len(enhanced_posts)})")
+            
+            from services.ai_analyzer import AIAnalyzer
+            analyzer = AIAnalyzer()
+            posts_data = [post_dict for _, post_dict in posts_needing_ai]
+            ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+            
+            # Save AI summaries to database and add to response
+            for (original_post, _), ai_post in zip(posts_needing_ai, ai_enhanced_posts):
+                try:
+                    # Update database with AI summary
+                    original_post.ai_summary = ai_post.get('ai_summary')
+                    original_post.ai_category = ai_post.get('ai_category') 
+                    original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                    original_post.ai_action_required = ai_post.get('ai_action_required')
+                    original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                    
+                    db.commit()
+                    enhanced_posts.append(ai_post)
+                    logger.debug(f"Generated and cached AI summary for searched post {original_post.id}")
+                    
+                except Exception as e:
+                    logger.error(f"Error saving AI summary for searched post {original_post.id}: {e}")
+                    enhanced_posts.append(ai_post)  # Still return the data even if save fails
+        else:
+            logger.info(f"📋 All {len(enhanced_posts)} searched posts already have cached AI summaries")
+        
+        return enhanced_posts
+        
+    except Exception as e:
+        logger.error(f"Error searching posts with AI summaries: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search posts with AI summaries")
+
 @router.get("/stats/summary")
 async def get_posts_summary(db: Session = Depends(get_db)):
     """Get summary statistics for posts"""
@@ -657,6 +855,96 @@ async def get_available_categories():
 async def get_available_sentiments():
     """Get list of available sentiment labels"""
     return [sentiment.value for sentiment in SentimentLabel]
+
+@router.post("/generate-missing-ai-summaries")
+async def generate_missing_ai_summaries(
+    batch_size: int = Query(20, ge=1, le=50, description="Number of posts to process at once"),
+    db: Session = Depends(get_db)
+):
+    """Generate AI summaries for posts that don't have them yet"""
+    try:
+        from database.models import PostDB
+        from services.ai_analyzer import AIAnalyzer
+        import json
+        
+        logger.info(f"🤖 Starting batch AI summary generation (batch_size={batch_size})")
+        
+        # Find posts without AI summaries
+        posts_without_ai = db.query(PostDB).filter(
+            or_(
+                PostDB.ai_summary.is_(None),
+                PostDB.ai_summary == '',
+                PostDB.ai_summary == 'null'
+            )
+        ).order_by(PostDB.date.desc()).limit(batch_size).all()
+        
+        if not posts_without_ai:
+            return {
+                "message": "All posts already have AI summaries",
+                "processed": 0,
+                "remaining": 0
+            }
+        
+        logger.info(f"Found {len(posts_without_ai)} posts without AI summaries")
+        
+        # Convert posts to format expected by AI analyzer
+        posts_data = []
+        for post in posts_without_ai:
+            post_dict = {
+                'id': post.id,
+                'title': post.title or '',
+                'content': post.content or '',
+                'author': post.author or '',
+                'category': post.category or '',
+                'url': str(post.url) if post.url else '',
+                'date': post.date.isoformat() if post.date else None,
+                'sentiment_score': post.sentiment_score,
+                'sentiment_label': post.sentiment_label
+            }
+            posts_data.append(post_dict)
+        
+        # Generate AI summaries
+        analyzer = AIAnalyzer()
+        ai_enhanced_posts = await analyzer.analyze_posts_with_summaries(posts_data)
+        
+        # Save AI summaries to database
+        updated_count = 0
+        for original_post, ai_post in zip(posts_without_ai, ai_enhanced_posts):
+            try:
+                original_post.ai_summary = ai_post.get('ai_summary')
+                original_post.ai_category = ai_post.get('ai_category')
+                original_post.ai_key_points = json.dumps(ai_post.get('ai_key_points', []))
+                original_post.ai_action_required = ai_post.get('ai_action_required')
+                original_post.ai_hashtags = json.dumps(ai_post.get('ai_hashtags', []))
+                updated_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error saving AI summary for post {original_post.id}: {e}")
+        
+        # Commit all changes
+        db.commit()
+        
+        # Get remaining count
+        remaining_count = db.query(PostDB).filter(
+            or_(
+                PostDB.ai_summary.is_(None),
+                PostDB.ai_summary == '',
+                PostDB.ai_summary == 'null'
+            )
+        ).count()
+        
+        logger.info(f"✅ Generated AI summaries for {updated_count} posts, {remaining_count} remaining")
+        
+        return {
+            "message": f"Successfully generated AI summaries for {updated_count} posts",
+            "processed": updated_count,
+            "remaining": remaining_count,
+            "batch_size": batch_size
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating missing AI summaries: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI summaries")
 
 @router.get("/hashtag/{hashtag}")
 async def get_posts_by_hashtag(
