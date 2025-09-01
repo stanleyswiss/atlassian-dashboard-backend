@@ -116,4 +116,4 @@ FastAPI App
 - **OpenAI errors**: Ensure valid `OPENAI_API_KEY`
 - **Scraping issues**: Check internet connectivity and rate limits
 
-Built with 🚀 using modern Python async patterns.
+Built with 🚀 using modern Python async patterns.# Force deployment trigger
