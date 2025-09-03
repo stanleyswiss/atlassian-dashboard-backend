@@ -113,30 +113,40 @@ class CloudNewsScraper:
             
             # Find H1 headings and panel blocks
             h1_headings = soup.find_all('h1')
-            panel_blocks = soup.find_all('div', class_=lambda c: c and 'panel-block' in c and 'conf-macro' in c and 'output-block' in c)
+            # Look for divs that contain status lozenges directly instead of restrictive class filtering
+            panel_blocks = []
+            
+            # Find all status lozenges first
+            all_lozenges = soup.find_all('span', class_=lambda c: c and 'status-macro' in c and 'aui-lozenge' in c)
+            
+            # Find parent divs of relevant lozenges (NEW THIS WEEK or COMING SOON)
+            for lozenge in all_lozenges:
+                if "NEW THIS WEEK" in lozenge.text or "COMING SOON" in lozenge.text:
+                    # Find parent div containing the panel-block content
+                    parent_div = lozenge.find_parent('div', class_=lambda c: c and 'panel-block' in c)
+                    if parent_div and parent_div not in panel_blocks:
+                        panel_blocks.append(parent_div)
             
             logger.info(f"Found {len(panel_blocks)} panel blocks")
             
             content_to_keep = []
             h1_with_updates = set()
             
-            # Process panel blocks for relevant content
+            # Process panel blocks for relevant content (already filtered for relevant lozenges)
             for div in panel_blocks:
-                has_relevant_lozenge = False
+                # Determine lozenge type for this div
                 lozenge_type = None
                 spans = div.find_all('span', class_=lambda c: c and 'status-macro' in c and 'aui-lozenge' in c)
                 
                 for span in spans:
                     if "NEW THIS WEEK" in span.text:
-                        has_relevant_lozenge = True
                         lozenge_type = "NEW_THIS_WEEK"
                         break
                     elif "COMING SOON" in span.text:
-                        has_relevant_lozenge = True
                         lozenge_type = "COMING_SOON"
                         break
                 
-                if has_relevant_lozenge:
+                if lozenge_type:  # Should always be true since we pre-filtered
                     # Find the closest h1 heading before this div
                     prev_h1 = div.find_previous('h1')
                     if prev_h1:
