@@ -65,7 +65,7 @@ async def get_cloud_news(
     limit: int = Query(50, ge=1, le=200, description="Number of news items to return"),
     feature_type: Optional[FeatureType] = Query(None, description="Filter by feature type"),
     product_area: Optional[str] = Query(None, description="Filter by product area"),
-    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back"),
+    days_back: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     target_audience: Optional[TargetAudience] = Query(None, description="Filter by target audience"),
     db: Session = Depends(get_db)
 ):
@@ -107,7 +107,7 @@ async def get_cloud_news(
 
 @router.get("/summary", response_model=List[CloudNewsSummary])
 async def get_cloud_news_summary(
-    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back"),
+    days_back: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     limit: int = Query(20, ge=1, le=100, description="Number of news items to return"),
     feature_type: Optional[FeatureType] = Query(None, description="Filter by feature type"),
     db: Session = Depends(get_db)
@@ -165,7 +165,7 @@ async def get_cloud_news_item(news_id: int, db: Session = Depends(get_db)):
 @router.post("/scrape")
 async def trigger_cloud_news_scrape(
     background_tasks: BackgroundTasks,
-    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back for news")
+    days_back: int = Query(30, ge=1, le=365, description="Number of days to look back for news")
 ):
     """Trigger cloud news scraping in the background"""
     try:
@@ -191,7 +191,7 @@ async def trigger_cloud_news_scrape(
 
 @router.get("/stats/overview", response_model=CloudNewsStats)
 async def get_cloud_news_stats(
-    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back"),
+    days_back: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     db: Session = Depends(get_db)
 ):
     """Get cloud news statistics"""
@@ -258,7 +258,7 @@ async def get_available_product_areas(db: Session = Depends(get_db)):
 
 @router.get("/features/by-type")
 async def get_features_by_type(
-    days_back: int = Query(7, ge=1, le=365, description="Number of days to look back"),
+    days_back: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     db: Session = Depends(get_db)
 ):
     """Get cloud news features grouped by type"""
