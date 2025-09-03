@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Date, Boolean
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Date, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 from datetime import datetime
 from .connection import Base
@@ -145,7 +145,7 @@ class CloudNewsDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     # Source information
-    source_url = Column(String(1000), nullable=False, unique=True)
+    source_url = Column(String(1000), nullable=False)
     blog_date = Column(DateTime, nullable=False, index=True)
     blog_title = Column(String(500), nullable=False)
     
@@ -164,3 +164,8 @@ class CloudNewsDB(Base):
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Composite unique constraint on source_url + feature_title to allow multiple features per URL
+    __table_args__ = (
+        UniqueConstraint('source_url', 'feature_title', name='unique_source_feature'),
+    )

@@ -864,6 +864,38 @@ async def migrate_database_schema():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/fix-cloud-news-constraint")
+async def fix_cloud_news_constraint_endpoint():
+    """Fix Cloud News database constraint to allow multiple features per URL"""
+    try:
+        from database.migrate import fix_cloud_news_constraint
+        import logging
+        
+        logger.info("🔄 Starting Cloud News constraint fix")
+        
+        success = fix_cloud_news_constraint()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Cloud News constraint fix completed successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Cloud News constraint fix failed - check logs",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Cloud News constraint fix failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/test-openai-call")
 async def test_single_openai_call():
     """Test a single OpenAI API call to verify it works"""

@@ -17,6 +17,76 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def fix_cloud_news_constraint():
+    """Fix Cloud News database constraint from source_url only to source_url + feature_title"""
+    
+    database_url = get_database_url()
+    engine = create_engine(database_url)
+    
+    # Get current schema
+    inspector = inspect(engine)
+    
+    # Check if cloud_news table exists
+    if not inspector.has_table('cloud_news'):
+        logger.error("Cloud News table does not exist!")
+        return False
+    
+    with engine.connect() as conn:
+        # Start transaction
+        trans = conn.begin()
+        
+        try:
+            logger.info("🔍 Checking current Cloud News constraints...")
+            
+            # Check if old constraint exists
+            result = conn.execute(text("""
+                SELECT constraint_name 
+                FROM information_schema.table_constraints 
+                WHERE table_name = 'cloud_news' 
+                AND constraint_type = 'UNIQUE'
+                AND constraint_name = 'cloud_news_source_url_key'
+            """))
+            
+            old_constraint_exists = result.fetchone() is not None
+            logger.info(f"Old constraint exists: {old_constraint_exists}")
+            
+            if old_constraint_exists:
+                logger.info("🗑️  Dropping old constraint...")
+                conn.execute(text("ALTER TABLE cloud_news DROP CONSTRAINT cloud_news_source_url_key"))
+                logger.info("✅ Old constraint dropped")
+            
+            # Check if new constraint already exists
+            result = conn.execute(text("""
+                SELECT constraint_name 
+                FROM information_schema.table_constraints 
+                WHERE table_name = 'cloud_news' 
+                AND constraint_type = 'UNIQUE'
+                AND constraint_name = 'unique_source_feature'
+            """))
+            
+            new_constraint_exists = result.fetchone() is not None
+            logger.info(f"New constraint exists: {new_constraint_exists}")
+            
+            if not new_constraint_exists:
+                logger.info("🔧 Creating new composite constraint...")
+                conn.execute(text("""
+                    ALTER TABLE cloud_news 
+                    ADD CONSTRAINT unique_source_feature 
+                    UNIQUE (source_url, feature_title)
+                """))
+                logger.info("✅ New composite constraint created")
+            
+            # Commit transaction
+            trans.commit()
+            logger.info("🎉 Cloud News constraint fix completed!")
+            return True
+            
+        except Exception as e:
+            # Rollback on error
+            trans.rollback()
+            logger.error(f"❌ Cloud News constraint fix failed: {e}")
+            return False
+
 def migrate_database():
     """Add missing columns to existing database"""
     
