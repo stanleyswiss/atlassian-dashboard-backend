@@ -77,8 +77,8 @@ class CloudNewsScraper:
             logger.warning("Using fallback URLs as main page scraping failed")
             urls = fallback_urls
         
-        # Limit to reasonable number to avoid overwhelming the system
-        urls = urls[:10]
+        # Limit to recent entries only (last 3-4 weeks)
+        urls = urls[:3]
         
         logger.info(f"Final URL list: {len(urls)} URLs to check for Cloud News")
         return urls
@@ -215,23 +215,39 @@ class CloudNewsScraper:
             return None
     
     def _extract_blog_date(self, source_url: str) -> datetime:
-        """Extract blog date from URL pattern"""
+        """Extract blog date from URL pattern, parsing the date range in filename"""
         try:
-            # Extract year and month from URL pattern
-            # URL format: .../cloud/blog/2025/01/atlassian-cloud-changes-...
+            # Extract filename from URL
+            # URL format: .../atlassian-cloud-changes-aug-25-to-sep-1-2025
             url_parts = source_url.split('/')
-            year_index = url_parts.index('blog') + 1 if 'blog' in url_parts else -1
+            filename = url_parts[-1] if url_parts else ""
             
-            if year_index > 0 and year_index < len(url_parts) - 1:
+            # Parse date range from filename
+            # Pattern: atlassian-cloud-changes-{month}-{day}-to-{month}-{day}-{year}
+            date_match = re.search(r'atlassian-cloud-changes-(\w+)-(\d+)-to-(\w+)-(\d+)-(\d+)', filename)
+            
+            if date_match:
+                start_month_name = date_match.group(1)
+                start_day = int(date_match.group(2))
+                year = int(date_match.group(5))
+                
+                # Convert month name to number
+                month_mapping = {
+                    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+                }
+                
+                start_month = month_mapping.get(start_month_name.lower(), 1)
+                
+                # Use the start date of the range
+                return datetime(year, start_month, start_day)
+            
+            # Fallback: Extract year from URL path
+            year_index = url_parts.index('blog') + 1 if 'blog' in url_parts else -1
+            if year_index > 0 and year_index < len(url_parts):
                 year = int(url_parts[year_index])
-                month = int(url_parts[year_index + 1])
+                return datetime(year, 1, 1)  # Default to Jan 1 if can't parse
                 
-                # Try to extract day from the date range in URL
-                date_part = url_parts[-1] if url_parts else ""
-                day_match = re.search(r'(\d+)', date_part)
-                day = int(day_match.group(1)) if day_match else 1
-                
-                return datetime(year, month, day)
         except Exception as e:
             logger.error(f"Error extracting blog date from URL: {e}")
         
